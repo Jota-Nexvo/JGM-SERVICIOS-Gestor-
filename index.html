@@ -74,11 +74,7 @@
     <main class="content">
 
       <section class="screen" id="screen-inicio">
-        <div class="placeholder-card">
-          <span class="phase-pill">Fase 4</span>
-          <div class="placeholder-title">Acá vas a ver el resumen del negocio</div>
-          <div class="placeholder-text">Total por cobrar, vencidos, cobros de hoy, números del mes, mayores deudores y últimos trabajos.</div>
-        </div>
+        <div id="inicio-content" class="stack-lg"></div>
       </section>
 
       <section class="screen" id="screen-clientes">
@@ -97,11 +93,7 @@
       </section>
 
       <section class="screen" id="screen-cobros">
-        <div class="placeholder-card">
-          <span class="phase-pill">Fase 4</span>
-          <div class="placeholder-title">Acá va la agenda de cobros</div>
-          <div class="placeholder-text">Fechas de cobro agrupadas en Vencidos, Hoy, Se acercan y Más adelante, con acceso directo a registrar pagos.</div>
-        </div>
+        <div id="cobros-content" class="stack"></div>
       </section>
 
       <section class="screen" id="screen-ajustes">
@@ -284,6 +276,33 @@
           <div class="modal-actions">
             <button type="button" class="btn-cancel" id="pf-cancel">Cancelar</button>
             <button type="button" class="btn-save btn-save-green" id="pf-save">Guardar pago</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Modal posponer / fijar fecha ===== -->
+  <div class="modal-overlay" id="modal-post" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pp-title">
+      <div class="modal-body">
+        <div class="modal-title" id="pp-title">Posponer cobro</div>
+        <div class="modal-sub" id="pp-sub"></div>
+        <div class="form-stack">
+          <div>
+            <div class="field-label">Nueva fecha de cobro</div>
+            <input type="date" id="pp-date">
+          </div>
+          <div class="quick-chips wrap">
+            <span class="quick-chip" data-pp="3">+3 días</span>
+            <span class="quick-chip" data-pp="7">+1 semana</span>
+            <span class="quick-chip" data-pp="15">+15 días</span>
+            <span class="quick-chip" data-pp="30">+1 mes</span>
+          </div>
+          <div class="form-err" id="pp-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="pp-cancel">Cancelar</button>
+            <button type="button" class="btn-save" id="pp-save">Guardar nueva fecha</button>
           </div>
         </div>
       </div>

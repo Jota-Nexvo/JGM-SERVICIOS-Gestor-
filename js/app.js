@@ -470,6 +470,111 @@
     toast(paidOff ? 'Pago registrado — ¡trabajo saldado!' : 'Pago registrado.');
   }
 
+  // ===== Modal posponer / fijar fecha =====
+  var postModalEl = document.getElementById('modal-post');
+  var ppForm = {};
+  function openPost(jobId, ddId) {
+    var j = state.data.jobs.find(function (x) { return x.id === jobId; });
+    if (!j) return;
+    var target = ddId;
+    if (!target) {
+      var pend = (j.dueDates || []).filter(function (x) { return !x.done; })
+        .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      target = pend.length ? pend[0].id : null;
+    }
+    ppForm = { jobId: jobId, ddId: target };
+    var c = state.data.clients.find(function (x) { return x.id === j.clientId; });
+    document.getElementById('pp-title').textContent = target ? 'Posponer cobro' : 'Fijar fecha de cobro';
+    document.getElementById('pp-save').textContent = target ? 'Guardar nueva fecha' : 'Fijar fecha';
+    document.getElementById('pp-sub').textContent =
+      (c ? c.name : '') + ' — ' + (j.desc || j.category) + ' · debe ' + fmtG(jobBalance(j));
+    document.getElementById('pp-date').value = addDaysIso(todayIso(), 7);
+    var err = document.getElementById('pp-err');
+    err.hidden = true;
+    err.textContent = '';
+    postModalEl.hidden = false;
+  }
+  function closePostModal() { postModalEl.hidden = true; }
+  function submitPost() {
+    var v = document.getElementById('pp-date').value;
+    if (!v) {
+      var err = document.getElementById('pp-err');
+      err.textContent = 'Elegí la nueva fecha.';
+      err.hidden = false;
+      return;
+    }
+    var wasFijar = !ppForm.ddId;
+    mutate(function (d) {
+      var j = d.jobs.find(function (x) { return x.id === ppForm.jobId; });
+      if (!j) return;
+      j.dueDates = j.dueDates || [];
+      if (ppForm.ddId) {
+        var x = j.dueDates.find(function (y) { return y.id === ppForm.ddId; });
+        if (x) { x.date = v; x.done = false; }
+      } else {
+        j.dueDates.push({ id: uid(), date: v, done: false });
+      }
+    });
+    closePostModal();
+    toast(wasFijar ? 'Fecha de cobro fijada.' : 'Cobro pospuesto al ' + dd(v) + '.');
+  }
+
+  // ===== Notificaciones (máx. 1/día) =====
+  function notifPerm() { return (typeof Notification !== 'undefined') ? Notification.permission : 'unsupported'; }
+  function isNotifOn() { return !!state.data.settings.notifEnabled && notifPerm() === 'granted'; }
+  function toggleNotif() {
+    if (isNotifOn()) {
+      mutate(function (d) { d.settings.notifEnabled = false; });
+      toast('Avisos desactivados.');
+      return;
+    }
+    if (typeof Notification === 'undefined') { toast('Este navegador no soporta notificaciones.'); return; }
+    Notification.requestPermission().then(function (p) {
+      mutate(function (d) { d.settings.notifEnabled = (p === 'granted'); });
+      toast(p === 'granted' ? 'Notificaciones activadas.' : 'El navegador no dio permiso para avisarte.');
+    });
+  }
+  function maybeNotify() {
+    try {
+      if (!isNotifOn()) return;
+      var key = 'jgm_lastNotif', t = todayIso();
+      if (localStorage.getItem(key) === t) return;
+      var u = urgentCounts();
+      if (u.venc + u.hoy === 0) return;
+      var parts = [];
+      if (u.venc) parts.push(u.venc + (u.venc === 1 ? ' cobro vencido' : ' cobros vencidos'));
+      if (u.hoy) parts.push(u.hoy + ' para hoy');
+      new Notification('JGM SERVICIOS — Cobros', { body: 'Tenés ' + parts.join(' y ') + '. Abrí la app para ver los detalles.' });
+      localStorage.setItem(key, t);
+    } catch (e) {}
+  }
+
+  // ===== Alertas de cobro =====
+  function buildAlerts() {
+    var S = state.data.settings;
+    var today = todayIso();
+    var alerts = [];
+    (state.data.jobs || []).forEach(function (j) {
+      if (!j.credit) return;
+      var bal = jobBalance(j);
+      if (bal <= 0) return;
+      var remind = Number(j.remind != null ? j.remind : S.remindDays) || 0;
+      (j.dueDates || []).forEach(function (x) {
+        if (x.done) return;
+        var diff = daysBetween(today, x.date);
+        var group = diff < 0 ? 'venc' : diff === 0 ? 'hoy' : diff <= remind ? 'prox' : 'fut';
+        alerts.push({ j: j, x: x, diff: diff, group: group, bal: bal });
+      });
+    });
+    alerts.sort(function (a, b) { return a.x.date < b.x.date ? -1 : 1; });
+    return alerts;
+  }
+  function jobsSinFecha() {
+    return (state.data.jobs || []).filter(function (j) {
+      return j.credit && jobBalance(j) > 0 && !(j.dueDates || []).some(function (x) { return !x.done; });
+    });
+  }
+
   // ===== WhatsApp =====
   function waLink(phone) {
     var digits = (phone || '').replace(/\D/g, '');
@@ -705,7 +810,7 @@
     box.querySelectorAll('[data-job-post]').forEach(function (el) {
       el.addEventListener('click', function (e) {
         e.stopPropagation();
-        toast('Las fechas de cobro se manejan en la Fase 4.');
+        openPost(el.getAttribute('data-job-post'), null);
       });
     });
     box.querySelectorAll('[data-job-edit]').forEach(function (el) {
@@ -726,6 +831,208 @@
           toast('Trabajo eliminado.');
         });
       });
+    });
+  }
+
+  // ===== Render: Inicio =====
+  var MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  function renderInicio() {
+    var D = state.data;
+    var box = document.getElementById('inicio-content');
+    var today = todayIso();
+    var bal = clientBalances();
+    var cById = {};
+    D.clients.forEach(function (c) { cById[c.id] = c; });
+    var alerts = buildAlerts();
+    var alVenc = alerts.filter(function (a) { return a.group === 'venc'; });
+    var alHoy = alerts.filter(function (a) { return a.group === 'hoy'; });
+    var sumUnique = function (list) {
+      var seen = {}, sum = 0;
+      list.forEach(function (a) { if (!seen[a.j.id]) { seen[a.j.id] = true; sum += a.bal; } });
+      return sum;
+    };
+    var vencSum = sumUnique(alVenc), hoySum = sumUnique(alHoy);
+    var tot = totalPending();
+    var credCount = D.jobs.filter(function (j) { return jobBalance(j) > 0; }).length;
+    var debtClients = debtClientsCount();
+    var totSub = credCount + (credCount === 1 ? ' trabajo con saldo' : ' trabajos con saldo') +
+      ' · ' + debtClients + (debtClients === 1 ? ' cliente' : ' clientes');
+
+    var mes = today.slice(0, 7);
+    var mesReal = D.jobs.filter(function (j) { return (j.date || '').slice(0, 7) === mes; })
+      .reduce(function (a, j) { return a + (Number(j.price) || 0); }, 0);
+    var mesCob = 0;
+    D.jobs.forEach(function (j) {
+      if (j.credit) {
+        (j.payments || []).forEach(function (p) {
+          if ((p.date || '').slice(0, 7) === mes) mesCob += Number(p.amount) || 0;
+        });
+      } else if ((j.date || '').slice(0, 7) === mes) {
+        mesCob += Number(j.price) || 0;
+      }
+    });
+    var mesLabel = MESES[Number(today.slice(5, 7)) - 1] + ' ' + today.slice(0, 4);
+    mesLabel = mesLabel.charAt(0).toUpperCase() + mesLabel.slice(1);
+    var mesPct = mesReal > 0 ? Math.min(100, Math.round(mesCob / mesReal * 100)) : 0;
+
+    var html = '<div class="stat-grid">' +
+      '<div class="stat-tot"><div class="stat-tot-label">Total por cobrar</div>' +
+      '<div class="stat-tot-amount">' + esc(fmtG(tot)) + '</div>' +
+      '<div class="stat-tot-sub">' + esc(totSub) + '</div></div>' +
+      '<div class="stat-mini venc" data-go="cobros"><div class="stat-mini-label"><span class="dot"></span>Vencidos · ' + alVenc.length + '</div>' +
+      '<div class="stat-mini-amount">' + esc(fmtG(vencSum)) + '</div></div>' +
+      '<div class="stat-mini hoy" data-go="cobros"><div class="stat-mini-label"><span class="dot"></span>Hoy · ' + alHoy.length + '</div>' +
+      '<div class="stat-mini-amount">' + esc(fmtG(hoySum)) + '</div></div>' +
+      '<div class="stat-mes"><div class="stat-mes-label">' + esc(mesLabel) + '</div>' +
+      '<div class="mes-row"><span>Realizado</span><span class="mono">' + esc(fmtG(mesReal)) + '</span></div>' +
+      '<div class="mes-bar"><div class="real"></div></div>' +
+      '<div class="mes-row"><span>Cobrado</span><span class="mono blue">' + esc(fmtG(mesCob)) + '</span></div>' +
+      '<div class="mes-bar"><div class="cob" style="width:' + mesPct + '%;"></div></div></div>' +
+      '</div>';
+
+    // mayores deudores
+    var deudores = D.clients
+      .map(function (c) { return { c: c, bal: bal[c.id] || 0 }; })
+      .filter(function (x) { return x.bal > 0; })
+      .sort(function (a, b) { return b.bal - a.bal; })
+      .slice(0, 4);
+    var deudoresHtml;
+    if (deudores.length) {
+      deudoresHtml = '<div class="panel-list">' + deudores.map(function (x) {
+        return '<div class="panel-row" data-open-client="' + esc(x.c.id) + '">' +
+          '<span class="panel-row-name">' + esc(x.c.name) + '</span>' +
+          '<span class="panel-row-amount">' + esc(fmtG(x.bal)) + '</span></div>';
+      }).join('') + '</div>';
+    } else {
+      deudoresHtml = '<div class="panel-empty">Nadie te debe en este momento.</div>';
+    }
+
+    // últimos trabajos
+    var ultimos = D.jobs.slice()
+      .sort(function (a, b) { return a.date < b.date ? 1 : -1; })
+      .slice(0, 5);
+    var ultimosHtml;
+    if (ultimos.length) {
+      ultimosHtml = '<div class="panel-list">' + ultimos.map(function (j) {
+        var jb = jobBalance(j);
+        var isPaid = j.credit ? jb <= 0 : true;
+        var chip = j.credit ? (isPaid ? 'Pagado' : 'Debe ' + mill(jb)) : 'Contado';
+        var chipBg = isPaid ? '#E9F5EF' : '#FBEEEA';
+        var chipFg = isPaid ? '#1F8A5B' : '#C2452D';
+        var c = cById[j.clientId];
+        return '<div class="panel-row" data-open-client="' + esc(j.clientId) + '">' +
+          '<div class="panel-row-main"><div class="panel-row-desc">' + esc(j.desc || j.category) + '</div>' +
+          '<div class="panel-row-sub">' + esc((c ? c.name : '—') + ' · ' + ddShort(j.date)) + '</div></div>' +
+          '<span class="panel-chip" style="background:' + chipBg + ';color:' + chipFg + ';">' + esc(chip) + '</span></div>';
+      }).join('') + '</div>';
+    } else {
+      ultimosHtml = '<div class="panel-empty">Todavía no cargaste trabajos. Usá el botón «+».</div>';
+    }
+
+    html += '<div class="two-cols">' +
+      '<div class="panel"><div class="panel-label">Mayor deuda</div>' + deudoresHtml + '</div>' +
+      '<div class="panel"><div class="panel-label">Últimos trabajos</div>' + ultimosHtml + '</div>' +
+      '</div>';
+
+    box.innerHTML = html;
+    box.querySelectorAll('[data-go]').forEach(function (el) {
+      el.addEventListener('click', function () { go(el.getAttribute('data-go')); });
+    });
+    box.querySelectorAll('[data-open-client]').forEach(function (el) {
+      el.addEventListener('click', function () { goClient(el.getAttribute('data-open-client')); });
+    });
+  }
+
+  // ===== Render: Cobros =====
+  function alertDateLabel(a) {
+    if (a.group === 'venc') {
+      var n = Math.abs(a.diff);
+      return 'Venció el ' + dd(a.x.date) + ' · hace ' + n + (n === 1 ? ' día' : ' días');
+    }
+    if (a.group === 'hoy') return 'Cobro previsto para hoy';
+    return dd(a.x.date) + ' · en ' + a.diff + (a.diff === 1 ? ' día' : ' días');
+  }
+  function renderCobros() {
+    var box = document.getElementById('cobros-content');
+    var cById = {};
+    state.data.clients.forEach(function (c) { cById[c.id] = c; });
+    var alerts = buildAlerts();
+    var sin = jobsSinFecha();
+    var perm = notifPerm();
+    var html = '';
+
+    if (!isNotifOn() && perm !== 'denied' && perm !== 'unsupported') {
+      html += '<div class="notif-banner"><span>Activá las notificaciones para que el navegador te avise los cobros aunque no estés mirando la app.</span>' +
+        '<button type="button" class="js-notif-on">Activar</button></div>';
+    }
+
+    if (!alerts.length && !sin.length) {
+      html += '<div class="cobros-empty"><div class="cobros-empty-title">No hay cobros pendientes</div>' +
+        '<div class="cobros-empty-text">Cuando cargues trabajos a crédito con fecha de cobro, van a aparecer acá.</div></div>';
+    }
+
+    var alertCard = function (a, cls) {
+      var c = cById[a.j.clientId];
+      return '<div class="alert-card ' + cls + '">' +
+        '<div class="alert-top"><span class="alert-date">● ' + esc(alertDateLabel(a)) + '</span>' +
+        '<span class="alert-saldo">' + esc(fmtG(a.bal)) + '</span></div>' +
+        '<div class="alert-client" data-alert-open="' + esc(a.j.clientId) + '">' + esc(c ? c.name : '(cliente eliminado)') + '</div>' +
+        '<div class="alert-desc">' + esc(a.j.desc || a.j.category) + '</div>' +
+        '<div class="alert-actions">' +
+        '<button type="button" class="btn-pay" data-alert-pay="' + esc(a.j.id) + '">Registrar pago</button>' +
+        '<button type="button" class="btn-ghost" data-alert-post="' + esc(a.j.id) + '" data-dd="' + esc(a.x.id) + '">Posponer</button>' +
+        '</div></div>';
+    };
+
+    var groups = [
+      { key: 'venc', label: 'Vencidos', cls: 'red', card: 'venc' },
+      { key: 'hoy', label: 'Para hoy', cls: 'amber', card: 'hoy' },
+      { key: 'prox', label: 'Se acercan', cls: 'blue', card: 'prox' }
+    ];
+    groups.forEach(function (g) {
+      var list = alerts.filter(function (a) { return a.group === g.key; });
+      if (!list.length) return;
+      html += '<div class="section-label ' + g.cls + '">' + g.label + ' · ' + list.length + '</div>';
+      html += list.map(function (a) { return alertCard(a, g.card); }).join('');
+    });
+
+    var fut = alerts.filter(function (a) { return a.group === 'fut'; });
+    if (fut.length) {
+      html += '<div class="section-label gray">Más adelante · ' + fut.length + '</div>';
+      html += fut.map(function (a) {
+        var c = cById[a.j.clientId];
+        return '<div class="fut-card"><div class="fut-main">' +
+          '<div class="fut-name" data-alert-open="' + esc(a.j.clientId) + '">' + esc(c ? c.name : '(cliente eliminado)') + '</div>' +
+          '<div class="fut-sub">' + esc((a.j.desc || a.j.category) + ' · ' + alertDateLabel(a)) + '</div></div>' +
+          '<span class="fut-saldo">' + esc(fmtG(a.bal)) + '</span></div>';
+      }).join('');
+    }
+
+    if (sin.length) {
+      html += '<div class="section-label gray">Con deuda pero sin fecha de cobro · ' + sin.length + '</div>';
+      html += sin.map(function (j) {
+        var c = cById[j.clientId];
+        return '<div class="sinfecha-card"><div class="sinfecha-main">' +
+          '<div class="fut-name" data-alert-open="' + esc(j.clientId) + '">' + esc(c ? c.name : '—') + '</div>' +
+          '<div class="fut-sub">' + esc((j.desc || j.category) + ' · debe ' + fmtG(jobBalance(j))) + '</div></div>' +
+          '<button type="button" class="btn-fijar" data-sin-post="' + esc(j.id) + '">Fijar fecha</button></div>';
+      }).join('');
+    }
+
+    box.innerHTML = html;
+    var notifBtn = box.querySelector('.js-notif-on');
+    if (notifBtn) notifBtn.addEventListener('click', toggleNotif);
+    box.querySelectorAll('[data-alert-open]').forEach(function (el) {
+      el.addEventListener('click', function () { goClient(el.getAttribute('data-alert-open')); });
+    });
+    box.querySelectorAll('[data-alert-pay]').forEach(function (el) {
+      el.addEventListener('click', function () { openPay(el.getAttribute('data-alert-pay')); });
+    });
+    box.querySelectorAll('[data-alert-post]').forEach(function (el) {
+      el.addEventListener('click', function () { openPost(el.getAttribute('data-alert-post'), el.getAttribute('data-dd')); });
+    });
+    box.querySelectorAll('[data-sin-post]').forEach(function (el) {
+      el.addEventListener('click', function () { openPost(el.getAttribute('data-sin-post'), null); });
     });
   }
 
@@ -772,8 +1079,10 @@
     document.querySelector('.js-total').textContent = fmtG(totalPending());
 
     // contenido dinámico
+    if (view === 'inicio') renderInicio();
     if (view === 'clientes') renderClientesList();
     if (view === 'cliente') renderCliente();
+    if (view === 'cobros') renderCobros();
   }
 
   // ===== Eventos globales =====
@@ -849,13 +1158,32 @@
   clearErrOnInput(['jf-client', 'jf-price', 'jf-down'], 'jf-err');
   clearErrOnInput(['pf-amount'], 'pf-err');
 
+  // modal posponer / fijar fecha
+  postModalEl.addEventListener('click', function (e) { if (e.target === postModalEl) closePostModal(); });
+  document.getElementById('pp-cancel').addEventListener('click', closePostModal);
+  document.getElementById('pp-save').addEventListener('click', submitPost);
+  document.querySelectorAll('[data-pp]').forEach(function (el) {
+    el.addEventListener('click', function () {
+      document.getElementById('pp-date').value = addDaysIso(todayIso(), Number(el.getAttribute('data-pp')));
+      document.getElementById('pp-err').hidden = true;
+    });
+  });
+  document.getElementById('pp-date').addEventListener('input', function () {
+    document.getElementById('pp-err').hidden = true;
+  });
+
   // Escape cierra el modal abierto
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
     if (!modalEl.hidden) closeClientModal();
     if (!jobModalEl.hidden) closeJobModal();
     if (!payModalEl.hidden) closePayModal();
+    if (!postModalEl.hidden) closePostModal();
   });
+
+  // aviso del navegador: al abrir (una vez por día) y cada hora
+  setTimeout(maybeNotify, 1800);
+  setInterval(maybeNotify, 60 * 60 * 1000);
 
   render();
 
@@ -871,6 +1199,8 @@
     openNewJob: openNewJob,
     openEditJob: openEditJob,
     openPay: openPay,
+    openPost: openPost,
+    toggleNotif: toggleNotif,
     helpers: {
       uid: uid, esc: esc, initials: initials, todayIso: todayIso, dIso: dIso, addDaysIso: addDaysIso,
       daysBetween: daysBetween, dd: dd, ddShort: ddShort, fmtG: fmtG, dots: dots, mill: mill, parseMoney: parseMoney,
