@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#232A56">
+<title>JGM SERVICIOS — Gestor de clientes y cobros</title>
+<link rel="icon" type="image/png" href="assets/jgm-logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== Sidebar escritorio ===== -->
+  <aside class="sidebar">
+    <div class="logo-card"><img src="assets/jgm-logo.png" alt="JGM SERVICIOS"></div>
+    <nav class="side-nav">
+      <button type="button" class="nav-item" data-nav="inicio">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7v9h-5v-6h-6v6H4z"/></svg>Inicio
+      </button>
+      <button type="button" class="nav-item" data-nav="clientes">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6s4.9 1.6 5.5 4.6"/><circle cx="16.5" cy="9" r="2.4"/><path d="M16 14.6c2.3.1 4 1.5 4.5 4"/></svg>Clientes
+      </button>
+      <button type="button" class="nav-item nav-item-between" data-nav="cobros">
+        <span class="nav-label">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 1 1 12 0c0 4.2 1.6 5.4 1.6 5.4H4.4S6 13.2 6 9"/><path d="M10 18a2.2 2.2 0 0 0 4 0"/></svg>Cobros
+        </span>
+        <span class="badge js-bell-badge">0</span>
+      </button>
+      <button type="button" class="nav-item" data-nav="ajustes">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h9M17.5 7H20M4 17h2.5M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="8.5" cy="17" r="2.2"/></svg>Ajustes
+      </button>
+    </nav>
+    <button type="button" class="btn-side-new-job js-new-job">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nuevo trabajo
+    </button>
+    <div class="side-total">
+      <div class="side-total-label">Total por cobrar</div>
+      <div class="side-total-amount js-total">₲ 0</div>
+    </div>
+  </aside>
+
+  <!-- ===== Columna principal ===== -->
+  <div class="main">
+
+    <!-- Topbar escritorio -->
+    <header class="topbar">
+      <div class="topbar-titles">
+        <div class="topbar-title js-page-title">Inicio</div>
+        <div class="topbar-sub js-page-sub">Resumen general del negocio</div>
+      </div>
+      <button type="button" class="btn-outline-blue js-new-client" hidden>+ Cliente</button>
+      <button type="button" class="btn-primary js-new-job">+ Nuevo trabajo</button>
+      <button type="button" class="bell-btn bell-btn-desktop" data-nav="cobros" aria-label="Ver cobros">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#232A56" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 1 1 12 0c0 4.2 1.6 5.4 1.6 5.4H4.4S6 13.2 6 9"/><path d="M10 18a2.2 2.2 0 0 0 4 0"/></svg>
+        <span class="badge badge-corner js-bell-badge">0</span>
+      </button>
+    </header>
+
+    <!-- Header móvil -->
+    <header class="mobile-header">
+      <div class="logo-chip js-mobile-logo"><img src="assets/jgm-logo.png" alt="JGM SERVICIOS"></div>
+      <div class="mobile-title js-mobile-title" hidden>Inicio</div>
+      <button type="button" class="bell-btn bell-btn-mobile" data-nav="cobros" aria-label="Ver cobros">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#232A56" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 1 1 12 0c0 4.2 1.6 5.4 1.6 5.4H4.4S6 13.2 6 9"/><path d="M10 18a2.2 2.2 0 0 0 4 0"/></svg>
+        <span class="badge badge-corner js-bell-badge">0</span>
+      </button>
+    </header>
+
+    <!-- Contenido -->
+    <main class="content">
+
+      <section class="screen" id="screen-inicio">
+        <div class="placeholder-card">
+          <span class="phase-pill">Fase 4</span>
+          <div class="placeholder-title">Acá vas a ver el resumen del negocio</div>
+          <div class="placeholder-text">Total por cobrar, vencidos, cobros de hoy, números del mes, mayores deudores y últimos trabajos.</div>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-clientes">
+        <div class="placeholder-card">
+          <span class="phase-pill">Fase 2</span>
+          <div class="placeholder-title">Acá va la lista de clientes</div>
+          <div class="placeholder-text">Buscador, secciones de mayor deuda y últimos trabajos, ficha de cada cliente y botón de WhatsApp.</div>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-cobros">
+        <div class="placeholder-card">
+          <span class="phase-pill">Fase 4</span>
+          <div class="placeholder-title">Acá va la agenda de cobros</div>
+          <div class="placeholder-text">Fechas de cobro agrupadas en Vencidos, Hoy, Se acercan y Más adelante, con acceso directo a registrar pagos.</div>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-ajustes">
+        <div class="placeholder-card">
+          <span class="phase-pill">Fase 6</span>
+          <div class="placeholder-title">Acá van los ajustes</div>
+          <div class="placeholder-text">Categorías de servicio, avisos anticipados, notificaciones, respaldo de datos y datos de ejemplo.</div>
+        </div>
+        <div class="ajustes-footer">
+          <img src="assets/jgm-logo.png" alt="JGM SERVICIOS">
+          <span>Gestor de clientes y cobros · v0.1.0</span>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ===== Tab bar móvil ===== -->
+  <nav class="tabbar">
+    <button type="button" class="tab-item" data-nav="inicio">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7v9h-5v-6h-6v6H4z"/></svg><span>Inicio</span>
+    </button>
+    <button type="button" class="tab-item" data-nav="clientes">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6s4.9 1.6 5.5 4.6"/><circle cx="16.5" cy="9" r="2.4"/><path d="M16 14.6c2.3.1 4 1.5 4.5 4"/></svg><span>Clientes</span>
+    </button>
+    <div class="tab-fab-wrap">
+      <button type="button" class="fab js-new-job" aria-label="Nuevo trabajo">
+        <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+    <button type="button" class="tab-item tab-item-bell" data-nav="cobros">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 1 1 12 0c0 4.2 1.6 5.4 1.6 5.4H4.4S6 13.2 6 9"/><path d="M10 18a2.2 2.2 0 0 0 4 0"/></svg><span>Cobros</span>
+      <span class="badge badge-tab js-bell-badge">0</span>
+    </button>
+    <button type="button" class="tab-item" data-nav="ajustes">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h9M17.5 7H20M4 17h2.5M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="8.5" cy="17" r="2.2"/></svg><span>Ajustes</span>
+    </button>
+  </nav>
+
+  <div class="toast" id="toast" role="status"></div>
+
+</div>
+<script src="js/app.js"></script>
+</body>
+</html>
