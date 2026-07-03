@@ -1,6 +1,6 @@
 /* JGM SERVICIOS — Gestor de clientes y cobros
-   Fase 1: modelo de datos + persistencia localStorage, seed de ejemplo,
-   layout responsive y navegación entre pantallas.
+   Fase 1: modelo de datos + persistencia localStorage, seed, layout y navegación.
+   Fase 2: Clientes — lista con secciones + buscador, ficha, CRUD, WhatsApp.
    Modelo y lógica replicados del prototipo (JGM Gestor.dc.html). */
 
 (function () {
@@ -10,6 +10,14 @@
 
   // ===== Utilidades =====
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function initials(name) {
+    return (name || '?').trim().split(/\s+/).slice(0, 2).map(function (w) { return w[0]; }).join('').toUpperCase();
+  }
 
   // ===== Fechas =====
   function localIso(dt) {
@@ -22,6 +30,8 @@
     var pa = a.split('-').map(Number), pb = b.split('-').map(Number);
     return Math.round((new Date(pb[0], pb[1] - 1, pb[2]) - new Date(pa[0], pa[1] - 1, pa[2])) / 864e5);
   }
+  function dd(iso) { if (!iso) return ''; var p = iso.split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }
+  function ddShort(iso) { if (!iso) return ''; var p = iso.split('-'); return p[2] + '/' + p[1]; }
 
   // ===== Dinero (₲ sin decimales, puntos de miles) =====
   function dots(n) {
@@ -29,6 +39,11 @@
     return String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   }
   function fmtG(n) { return '₲ ' + dots(n); }
+  function mill(n) {
+    n = Number(n) || 0;
+    if (n >= 1e6) { return (Math.round(n / 1e5) / 10).toString().replace('.', ',') + ' M'; }
+    return dots(n);
+  }
 
   // ===== Cálculos =====
   function jobPaid(j) {
@@ -94,10 +109,25 @@
   // ===== Estado =====
   var state = {
     view: 'inicio',
+    clientId: null,
+    search: '',
+    expandedJobId: null,
+    confirmKey: null,
     data: loadData()
   };
+  var confirmTimer = null;
 
   // ===== Derivados =====
+  function clientBalances() {
+    var byClient = {};
+    (state.data.jobs || []).forEach(function (j) {
+      byClient[j.clientId] = (byClient[j.clientId] || 0) + jobBalance(j);
+    });
+    return byClient;
+  }
+  function jobsOf(cid) {
+    return (state.data.jobs || []).filter(function (j) { return j.clientId === cid; });
+  }
   function urgentCounts() {
     var today = todayIso();
     var venc = 0, hoy = 0;
@@ -115,17 +145,15 @@
     return (state.data.jobs || []).reduce(function (a, j) { return a + jobBalance(j); }, 0);
   }
   function debtClientsCount() {
-    var byClient = {};
-    (state.data.jobs || []).forEach(function (j) {
-      byClient[j.clientId] = (byClient[j.clientId] || 0) + jobBalance(j);
-    });
-    return Object.keys(byClient).filter(function (k) { return byClient[k] > 0; }).length;
+    var bal = clientBalances();
+    return Object.keys(bal).filter(function (k) { return bal[k] > 0; }).length;
   }
   function titles() {
     var D = state.data;
     return {
       inicio: ['Inicio', 'Resumen general del negocio'],
       clientes: ['Clientes', D.clients.length + ' registrados · ' + debtClientsCount() + ' con deuda'],
+      cliente: ['Cliente', ''],
       cobros: ['Cobros', 'Avisos de cobro y pendientes'],
       ajustes: ['Ajustes', 'Configuración y respaldo']
     };
@@ -141,25 +169,338 @@
     toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2600);
   }
 
-  // ===== Navegación / render =====
-  function go(view) {
-    state.view = view;
+  // ===== Confirmación de doble toque =====
+  function confirm2(key, fn) {
+    if (state.confirmKey === key) {
+      state.confirmKey = null;
+      clearTimeout(confirmTimer);
+      fn();
+      return;
+    }
+    state.confirmKey = key;
+    clearTimeout(confirmTimer);
+    confirmTimer = setTimeout(function () { state.confirmKey = null; render(); }, 3500);
     render();
   }
 
+  // ===== Navegación =====
+  function go(view) {
+    state.view = view;
+    state.confirmKey = null;
+    render();
+    window.scrollTo(0, 0);
+  }
+  function goClient(id) {
+    state.view = 'cliente';
+    state.clientId = id;
+    state.expandedJobId = null;
+    state.confirmKey = null;
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  // ===== Modal cliente =====
+  var modalEl = document.getElementById('modal-client');
+  var cForm = { id: null };
+  function openClientModal(client) {
+    cForm = { id: client ? client.id : null };
+    document.getElementById('cf-title').textContent = client ? 'Editar cliente' : 'Nuevo cliente';
+    document.getElementById('cf-name').value = client ? client.name : '';
+    document.getElementById('cf-phone').value = client ? (client.phone || '') : '';
+    document.getElementById('cf-address').value = client ? (client.address || '') : '';
+    document.getElementById('cf-ci').value = client ? (client.ci || '') : '';
+    document.getElementById('cf-notes').value = client ? (client.notes || '') : '';
+    var err = document.getElementById('cf-err');
+    err.hidden = true;
+    err.textContent = '';
+    modalEl.hidden = false;
+    document.getElementById('cf-name').focus();
+  }
+  function closeClientModal() { modalEl.hidden = true; }
+  function submitClient() {
+    var name = document.getElementById('cf-name').value.trim();
+    if (!name) {
+      var err = document.getElementById('cf-err');
+      err.textContent = 'El nombre es obligatorio.';
+      err.hidden = false;
+      return;
+    }
+    var phone = document.getElementById('cf-phone').value;
+    var address = document.getElementById('cf-address').value;
+    var ci = document.getElementById('cf-ci').value;
+    var notes = document.getElementById('cf-notes').value;
+    var isNew = !cForm.id;
+    var newId = null;
+    mutate(function (d) {
+      if (cForm.id) {
+        var c = d.clients.find(function (x) { return x.id === cForm.id; });
+        if (c) { c.name = name; c.phone = phone; c.address = address; c.ci = ci; c.notes = notes; }
+      } else {
+        newId = uid();
+        d.clients.push({ id: newId, name: name, phone: phone, address: address, ci: ci, notes: notes });
+      }
+    });
+    closeClientModal();
+    if (isNew && newId) {
+      goClient(newId);
+      toast('Cliente guardado.');
+    }
+  }
+
+  // ===== WhatsApp =====
+  function waLink(phone) {
+    var digits = (phone || '').replace(/\D/g, '');
+    if (!digits) return '';
+    return 'https://wa.me/' + (digits.indexOf('595') === 0 ? digits : '595' + digits.replace(/^0/, ''));
+  }
+
+  // ===== Render: lista de clientes =====
+  function clientRowHtml(c, bal) {
+    var js = jobsOf(c.id);
+    var city = (c.address || '').split('·')[0].trim();
+    var sub = (city ? city + ' · ' : '') + js.length + (js.length === 1 ? ' trabajo' : ' trabajos');
+    var right = bal > 0 ? fmtG(bal) : 'Al día';
+    var rightCls = bal > 0 ? 'debt' : 'ok';
+    return '<button type="button" class="client-row" data-client="' + esc(c.id) + '">' +
+      '<div class="avatar">' + esc(initials(c.name)) + '</div>' +
+      '<div class="client-row-main"><div class="client-row-name">' + esc(c.name) + '</div>' +
+      '<div class="client-row-sub">' + esc(sub) + '</div></div>' +
+      '<span class="client-row-right ' + rightCls + '">' + esc(right) + '</span></button>';
+  }
+
+  function renderClientesList() {
+    var D = state.data;
+    var box = document.getElementById('clientes-list');
+    var bal = clientBalances();
+    var q = (state.search || '').trim().toLowerCase();
+    var html = '';
+
+    if (D.clients.length === 0) {
+      html = '<div class="empty-card">' +
+        '<div class="empty-card-title">Todavía no hay clientes</div>' +
+        '<div class="empty-card-text">Agregá tu primer cliente para empezar a cargar trabajos.</div>' +
+        '<button type="button" class="btn-cta js-empty-new">+ Agregar cliente</button></div>';
+    } else if (q) {
+      var res = D.clients.filter(function (c) {
+        return ((c.name || '') + ' ' + (c.address || '') + ' ' + (c.phone || '') + ' ' + (c.ci || '')).toLowerCase().indexOf(q) !== -1;
+      });
+      html += '<div class="section-label first">Resultados · ' + res.length + '</div>';
+      html += res.map(function (c) { return clientRowHtml(c, bal[c.id] || 0); }).join('');
+      if (!res.length) html += '<div class="dashed-card">No encontré clientes con «' + esc(state.search.trim()) + '».</div>';
+    } else {
+      var jx = D.jobs;
+      // ① mayor deuda
+      var secDeuda = D.clients
+        .map(function (c) { return { c: c, bal: bal[c.id] || 0 }; })
+        .filter(function (x) { return x.bal > 0; })
+        .sort(function (a, b) { return b.bal - a.bal; })
+        .slice(0, 5);
+      if (secDeuda.length) {
+        html += '<div class="section-label red first">① Mayor deuda</div>';
+        html += secDeuda.map(function (x) { return clientRowHtml(x.c, x.bal); }).join('');
+      }
+      // ② últimos trabajos
+      var lastJobDate = {};
+      jx.forEach(function (j) {
+        if (!lastJobDate[j.clientId] || j.date > lastJobDate[j.clientId]) lastJobDate[j.clientId] = j.date;
+      });
+      var secTrab = D.clients
+        .filter(function (c) { return lastJobDate[c.id]; })
+        .sort(function (a, b) { return lastJobDate[a.id] < lastJobDate[b.id] ? 1 : -1; })
+        .slice(0, 4);
+      if (secTrab.length) {
+        html += '<div class="section-label blue">② Últimos trabajos</div>';
+        html += secTrab.map(function (c) { return clientRowHtml(c, bal[c.id] || 0); }).join('');
+      }
+      // ③ último movimiento
+      var lastMov = {};
+      jx.forEach(function (j) {
+        (j.payments || []).forEach(function (p) {
+          if (!lastMov[j.clientId] || p.date > lastMov[j.clientId]) lastMov[j.clientId] = p.date;
+        });
+      });
+      var secMov = D.clients
+        .filter(function (c) { return lastMov[c.id]; })
+        .sort(function (a, b) { return lastMov[a.id] < lastMov[b.id] ? 1 : -1; })
+        .slice(0, 4);
+      if (secMov.length) {
+        html += '<div class="section-label">③ Último movimiento</div>';
+        html += secMov.map(function (c) { return clientRowHtml(c, bal[c.id] || 0); }).join('');
+      }
+      // todos A–Z
+      html += '<div class="section-label">Todos (A–Z) · ' + D.clients.length + '</div>';
+      html += D.clients.slice()
+        .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); })
+        .map(function (c) { return clientRowHtml(c, bal[c.id] || 0); }).join('');
+    }
+
+    box.innerHTML = html;
+    box.querySelectorAll('[data-client]').forEach(function (el) {
+      el.addEventListener('click', function () { goClient(el.getAttribute('data-client')); });
+    });
+    var emptyNew = box.querySelector('.js-empty-new');
+    if (emptyNew) emptyNew.addEventListener('click', function () { openClientModal(null); });
+  }
+
+  // ===== Render: ficha de cliente =====
+  function dueChipHtml(x, j) {
+    var remind = Number(j.remind != null ? j.remind : state.data.settings.remindDays) || 0;
+    var diff = daysBetween(todayIso(), x.date);
+    var label, bg, fg;
+    if (diff < 0) { label = 'Venció ' + ddShort(x.date); bg = '#FBEEEA'; fg = '#C2452D'; }
+    else if (diff === 0) { label = 'Cobro hoy'; bg = '#FBF3E4'; fg = '#B87514'; }
+    else if (diff <= remind) { label = 'Cobro ' + ddShort(x.date); bg = '#E8EEFB'; fg = '#2B57C8'; }
+    else { label = 'Cobro ' + ddShort(x.date); bg = '#EEF1F7'; fg = '#6B7690'; }
+    return '<span class="due-chip" style="background:' + bg + ';color:' + fg + ';">' + esc(label) + '</span>';
+  }
+
+  function jobCardHtml(j) {
+    var paid = jobPaid(j), bal = jobBalance(j);
+    var isPaid = j.credit ? bal <= 0 : true;
+    var expanded = state.expandedJobId === j.id;
+    var pct = (Number(j.price) || 0) > 0 ? Math.min(100, Math.round(paid / Number(j.price) * 100)) : 0;
+    var pendDues = (j.dueDates || []).filter(function (x) { return !x.done; });
+    var stText = j.credit ? (isPaid ? 'Pagado' : 'Debe ' + mill(bal)) : 'Pagado';
+    var dateLabel = dd(j.date) + ((j.photos || []).length ? ' · ' + j.photos.length + (j.photos.length === 1 ? ' foto' : ' fotos') : '');
+
+    var html = '<div class="job-card">' +
+      '<div class="job-head" data-toggle-job="' + esc(j.id) + '">' +
+      '<div class="job-head-top"><span class="cat-pill">' + esc(j.category || 'Otro') + '</span>' +
+      '<span class="job-date">' + esc(dateLabel) + '</span></div>' +
+      '<div class="job-desc-row"><div class="job-desc">' + esc(j.desc || '(sin descripción)') + '</div>' +
+      '<span class="job-caret">' + (expanded ? '▲ cerrar' : '▼ detalles') + '</span></div>' +
+      '<div class="job-mode-row"><span class="job-mode">' + (j.credit ? 'Crédito' : 'Contado') +
+      ' · <span class="mono">' + esc(fmtG(j.price)) + '</span></span>' +
+      '<span class="st-pill ' + (isPaid ? 'st-paid' : 'st-debt') + '">' + esc(stText) + '</span></div>';
+
+    if (j.credit) {
+      html += '<div class="progress"><div style="width:' + pct + '%;"></div></div>' +
+        '<div class="job-pay-row">' +
+        '<span>Pagado: <span class="mono" style="color:#1F8A5B;">' + esc(fmtG(paid)) + '</span></span>' +
+        '<span>Saldo: <span class="mono" style="color:' + (bal > 0 ? '#C2452D' : '#1F8A5B') + ';">' + esc(fmtG(bal)) + '</span></span></div>';
+      if (pendDues.length) {
+        html += '<div class="due-chips">' + pendDues.map(function (x) { return dueChipHtml(x, j); }).join('') + '</div>';
+      }
+    }
+    html += '</div>'; // /job-head
+
+    if (expanded) {
+      html += '<div class="job-detail">';
+      var pays = (j.payments || []).slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      if (pays.length) {
+        html += '<div class="job-detail-label">Historial de pagos</div><div class="pay-list">' +
+          pays.map(function (p) {
+            return '<div class="pay-row"><span class="pay-row-label">' + esc(dd(p.date) + (p.note ? ' · ' + p.note : '')) + '</span>' +
+              '<span class="pay-row-amount">+ ' + esc(fmtG(p.amount)) + '</span></div>';
+          }).join('') + '</div>';
+      } else if (j.credit) {
+        html += '<div class="no-pay">Sin pagos registrados todavía.</div>';
+      }
+      html += '<div class="job-actions">';
+      if (j.credit && bal > 0) {
+        html += '<button type="button" class="btn-pay js-job-pay">+ Registrar pago</button>' +
+          '<button type="button" class="btn-ghost js-job-post">' + (pendDues.length ? 'Posponer' : 'Fijar fecha') + '</button>';
+      }
+      html += '<button type="button" class="btn-ghost js-job-edit">Editar</button>' +
+        '<button type="button" class="btn-ghost-danger js-job-del">Eliminar</button></div></div>';
+    }
+
+    html += '</div>'; // /job-card
+    return html;
+  }
+
+  function renderCliente() {
+    var box = document.getElementById('cliente-detail');
+    var c = state.data.clients.find(function (x) { return x.id === state.clientId; });
+    if (!c) { go('clientes'); return; }
+    var bal = clientBalances()[c.id] || 0;
+    var js = jobsOf(c.id).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    var wa = waLink(c.phone);
+    var meta = [c.ci || '', c.phone || ''].filter(Boolean).join(' · ') || 'Sin datos de contacto';
+    var delLabel = state.confirmKey === 'delc:' + c.id ? '¿Seguro? Tocá otra vez' : 'Eliminar';
+
+    var html = '<div class="detail-header">' +
+      '<button type="button" class="btn-white js-back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Volver</button>' +
+      '<div class="spacer"></div>' +
+      '<button type="button" class="btn-white js-edit-client">Editar</button>' +
+      '<button type="button" class="btn-danger-outline js-del-client">' + esc(delLabel) + '</button></div>';
+
+    html += '<div class="info-card"><div class="info-card-top">' +
+      '<div class="avatar-lg">' + esc(initials(c.name)) + '</div>' +
+      '<div class="info-main"><div class="info-name">' + esc(c.name) + '</div>' +
+      '<div class="info-address">' + esc(c.address || 'Sin dirección cargada') + '</div>' +
+      '<div class="info-meta">' + esc(meta) + '</div></div>' +
+      (wa ? '<a class="btn-wa" href="' + esc(wa) + '" target="_blank" rel="noopener">' +
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L4 20l1-4.5A8.5 8.5 0 1 1 21 11.5"/></svg>WhatsApp</a>' : '') +
+      '</div>' +
+      ((c.notes || '').trim() ? '<div class="notes-box">' + esc(c.notes) + '</div>' : '') +
+      '</div>';
+
+    html += '<div class="saldo-card"><span class="saldo-card-label">Saldo pendiente</span>' +
+      '<span class="saldo-card-amount" style="color:' + (bal > 0 ? '#FF9D8A' : '#7BD8A8') + ';">' +
+      esc(bal > 0 ? fmtG(bal) : 'Al día ✓') + '</span></div>';
+
+    html += '<button type="button" class="btn-big-primary js-client-new-job">+ Nuevo trabajo para este cliente</button>';
+
+    if (js.length) {
+      html += js.map(jobCardHtml).join('');
+    } else {
+      html += '<div class="dashed-card">Este cliente todavía no tiene trabajos cargados.</div>';
+    }
+
+    box.innerHTML = html;
+
+    box.querySelector('.js-back').addEventListener('click', function () { go('clientes'); });
+    box.querySelector('.js-edit-client').addEventListener('click', function () { openClientModal(c); });
+    box.querySelector('.js-del-client').addEventListener('click', function () {
+      confirm2('delc:' + c.id, function () {
+        mutate(function (d) {
+          d.clients = d.clients.filter(function (x) { return x.id !== c.id; });
+          d.jobs = d.jobs.filter(function (x) { return x.clientId !== c.id; });
+        });
+        go('clientes');
+        toast('Cliente eliminado.');
+      });
+    });
+    box.querySelector('.js-client-new-job').addEventListener('click', function () {
+      toast('El alta de trabajos se habilita en la Fase 3.');
+    });
+    box.querySelectorAll('[data-toggle-job]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var id = el.getAttribute('data-toggle-job');
+        state.expandedJobId = state.expandedJobId === id ? null : id;
+        render();
+      });
+    });
+    box.querySelectorAll('.js-job-pay').forEach(function (el) {
+      el.addEventListener('click', function (e) { e.stopPropagation(); toast('Los pagos se habilitan en la Fase 3.'); });
+    });
+    box.querySelectorAll('.js-job-post').forEach(function (el) {
+      el.addEventListener('click', function (e) { e.stopPropagation(); toast('Las fechas de cobro se manejan en la Fase 4.'); });
+    });
+    box.querySelectorAll('.js-job-edit').forEach(function (el) {
+      el.addEventListener('click', function (e) { e.stopPropagation(); toast('La edición de trabajos se habilita en la Fase 3.'); });
+    });
+    box.querySelectorAll('.js-job-del').forEach(function (el) {
+      el.addEventListener('click', function (e) { e.stopPropagation(); toast('El borrado de trabajos se habilita en la Fase 3.'); });
+    });
+  }
+
+  // ===== Render principal =====
   function render() {
     var view = state.view;
     var t = titles()[view];
 
-    // pantallas
+    // pantallas (la vista 'cliente' vive en su propia sección)
     document.querySelectorAll('.screen').forEach(function (s) {
       s.classList.toggle('active', s.id === 'screen-' + view);
     });
 
-    // nav activa (sidebar + tab bar)
+    // nav activa: Clientes queda resaltado también en la ficha
+    var navView = view === 'cliente' ? 'clientes' : view;
     document.querySelectorAll('[data-nav]').forEach(function (el) {
       if (el.classList.contains('nav-item') || el.classList.contains('tab-item')) {
-        el.classList.toggle('active', el.getAttribute('data-nav') === view);
+        el.classList.toggle('active', el.getAttribute('data-nav') === navView);
       }
     });
 
@@ -186,9 +527,13 @@
 
     // total por cobrar (sidebar)
     document.querySelector('.js-total').textContent = fmtG(totalPending());
+
+    // contenido dinámico
+    if (view === 'clientes') renderClientesList();
+    if (view === 'cliente') renderCliente();
   }
 
-  // ===== Eventos =====
+  // ===== Eventos globales =====
   document.querySelectorAll('[data-nav]').forEach(function (el) {
     el.addEventListener('click', function () { go(el.getAttribute('data-nav')); });
   });
@@ -196,8 +541,19 @@
     el.addEventListener('click', function () { toast('El alta de trabajos se habilita en la Fase 3.'); });
   });
   document.querySelectorAll('.js-new-client').forEach(function (el) {
-    el.addEventListener('click', function () { toast('El alta de clientes se habilita en la Fase 2.'); });
+    el.addEventListener('click', function () { openClientModal(null); });
   });
+  document.getElementById('search-input').addEventListener('input', function (e) {
+    state.search = e.target.value;
+    renderClientesList();
+  });
+
+  // modal
+  modalEl.addEventListener('click', function (e) { if (e.target === modalEl) closeClientModal(); });
+  document.getElementById('cf-cancel').addEventListener('click', closeClientModal);
+  document.getElementById('cf-save').addEventListener('click', submitClient);
+  document.getElementById('cf-name').addEventListener('keydown', function (e) { if (e.key === 'Enter') submitClient(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modalEl.hidden) closeClientModal(); });
 
   render();
 
@@ -205,9 +561,16 @@
   window.JGM = {
     state: state,
     go: go,
+    goClient: goClient,
     mutate: mutate,
     toast: toast,
     seedData: seedData,
-    helpers: { uid: uid, todayIso: todayIso, dIso: dIso, daysBetween: daysBetween, fmtG: fmtG, dots: dots, jobPaid: jobPaid, jobBalance: jobBalance, urgentCounts: urgentCounts, totalPending: totalPending }
+    openClientModal: openClientModal,
+    helpers: {
+      uid: uid, esc: esc, initials: initials, todayIso: todayIso, dIso: dIso,
+      daysBetween: daysBetween, dd: dd, ddShort: ddShort, fmtG: fmtG, dots: dots, mill: mill,
+      jobPaid: jobPaid, jobBalance: jobBalance, urgentCounts: urgentCounts,
+      totalPending: totalPending, clientBalances: clientBalances, waLink: waLink, confirm2: confirm2
+    }
   };
 })();

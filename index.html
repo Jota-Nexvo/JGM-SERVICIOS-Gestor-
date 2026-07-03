@@ -82,11 +82,18 @@
       </section>
 
       <section class="screen" id="screen-clientes">
-        <div class="placeholder-card">
-          <span class="phase-pill">Fase 2</span>
-          <div class="placeholder-title">Acá va la lista de clientes</div>
-          <div class="placeholder-text">Buscador, secciones de mayor deuda y últimos trabajos, ficha de cada cliente y botón de WhatsApp.</div>
+        <div class="search-bar">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8A97B0" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg>
+          <input id="search-input" type="search" autocomplete="off" placeholder="Buscar por nombre, ciudad, teléfono…">
         </div>
+        <div id="clientes-list" class="stack"></div>
+        <button type="button" class="fab fab-client js-new-client" aria-label="Nuevo cliente">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </section>
+
+      <section class="screen" id="screen-cliente">
+        <div id="cliente-detail" class="stack"></div>
       </section>
 
       <section class="screen" id="screen-cobros">
@@ -133,6 +140,42 @@
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h9M17.5 7H20M4 17h2.5M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="8.5" cy="17" r="2.2"/></svg><span>Ajustes</span>
     </button>
   </nav>
+
+  <!-- ===== Modal cliente ===== -->
+  <div class="modal-overlay" id="modal-client" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cf-title">
+      <div class="modal-body">
+        <div class="modal-title" id="cf-title">Nuevo cliente</div>
+        <div class="form-stack">
+          <div>
+            <div class="field-label">Nombre completo *</div>
+            <input id="cf-name" type="text" autocomplete="off" placeholder="Ej.: Ramón Benítez">
+          </div>
+          <div>
+            <div class="field-label">Teléfono / WhatsApp</div>
+            <input id="cf-phone" type="tel" autocomplete="off" placeholder="Ej.: 0981 456 789">
+          </div>
+          <div>
+            <div class="field-label">Dirección / ciudad</div>
+            <input id="cf-address" type="text" autocomplete="off" placeholder="Ej.: Luque · Ruta Luque–San Ber km 4">
+          </div>
+          <div>
+            <div class="field-label">CI / RUC</div>
+            <input id="cf-ci" type="text" autocomplete="off" placeholder="Ej.: 1.234.567-8">
+          </div>
+          <div>
+            <div class="field-label">Notas</div>
+            <textarea id="cf-notes" placeholder="Referencias, mañas, datos útiles…"></textarea>
+          </div>
+          <div class="form-err" id="cf-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="cf-cancel">Cancelar</button>
+            <button type="button" class="btn-save" id="cf-save">Guardar cliente</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="toast" id="toast" role="status"></div>
 
