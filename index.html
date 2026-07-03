@@ -177,6 +177,119 @@
     </div>
   </div>
 
+  <!-- ===== Modal trabajo ===== -->
+  <div class="modal-overlay" id="modal-job" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="jf-title">
+      <div class="modal-body">
+        <div class="modal-title" id="jf-title">Nuevo trabajo</div>
+        <div class="form-stack">
+          <div>
+            <div class="field-label">Cliente *</div>
+            <div class="locked-field" id="jf-client-locked" hidden></div>
+            <select id="jf-client"><option value="">Elegir cliente…</option></select>
+          </div>
+          <div>
+            <div class="field-label">Categoría</div>
+            <div class="chip-row" id="jf-cats"></div>
+          </div>
+          <div>
+            <div class="field-label">Descripción del trabajo</div>
+            <textarea id="jf-desc" class="ta-sm" placeholder="Ej.: Perforación de pozo artesiano 45 m…"></textarea>
+          </div>
+          <div class="grid-2">
+            <div>
+              <div class="field-label">Fecha realizada</div>
+              <input type="date" id="jf-date">
+            </div>
+            <div>
+              <div class="field-label">Precio (₲) *</div>
+              <input id="jf-price" inputmode="numeric" autocomplete="off" class="mono-input" placeholder="14.500.000">
+            </div>
+          </div>
+          <div>
+            <div class="field-label">Forma de pago</div>
+            <div class="segmented">
+              <div id="jf-contado">Contado</div>
+              <div id="jf-credito">Crédito</div>
+            </div>
+          </div>
+          <div class="form-stack" id="jf-credit-block">
+            <div class="grid-2">
+              <div id="jf-down-wrap">
+                <div class="field-label">Seña / entrega inicial</div>
+                <input id="jf-down" inputmode="numeric" autocomplete="off" class="mono-input" placeholder="0">
+              </div>
+              <div>
+                <div class="field-label">Avisar (días antes)</div>
+                <input type="number" id="jf-remind" min="0" max="60">
+              </div>
+            </div>
+            <div>
+              <div class="field-label">Fechas de cobro (podés fijar varias)</div>
+              <div class="chip-row" id="jf-dues"></div>
+              <div class="due-add">
+                <input type="date" id="jf-due-new">
+                <button type="button" id="jf-add-due">+ Agregar</button>
+              </div>
+            </div>
+            <div class="preview-box">
+              <span id="jf-saldo-label">Saldo que quedará</span>
+              <span class="preview-amount red" id="jf-saldo-preview">₲ 0</span>
+            </div>
+          </div>
+          <div class="form-err" id="jf-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="jf-cancel">Cancelar</button>
+            <button type="button" class="btn-save" id="jf-save">Guardar trabajo</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Modal pago ===== -->
+  <div class="modal-overlay" id="modal-pay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pf-title">
+      <div class="modal-body">
+        <div class="modal-title" id="pf-title">Registrar pago</div>
+        <div class="modal-sub" id="pf-sub"></div>
+        <div class="preview-box" style="margin-bottom: 12px;">
+          <span>Saldo actual</span>
+          <span class="preview-amount red" id="pf-saldo">₲ 0</span>
+        </div>
+        <div class="form-stack">
+          <div>
+            <div class="field-label">Monto entregado (₲) *</div>
+            <input id="pf-amount" inputmode="numeric" autocomplete="off" class="mono-input-lg" placeholder="3.000.000">
+            <div class="quick-chips">
+              <span class="quick-chip green" id="pf-all">Todo el saldo</span>
+              <span class="quick-chip" id="pf-half">La mitad</span>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <div class="field-label">Fecha</div>
+              <input type="date" id="pf-date">
+            </div>
+            <div>
+              <div class="field-label">Nota (opcional)</div>
+              <input id="pf-note" type="text" autocomplete="off" placeholder="Ej.: pagó en su casa">
+            </div>
+          </div>
+          <div class="preview-box green">
+            <span>Nuevo saldo</span>
+            <span class="preview-amount" id="pf-new">₲ 0</span>
+          </div>
+          <div class="form-err" id="pf-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="pf-cancel">Cancelar</button>
+            <button type="button" class="btn-save btn-save-green" id="pf-save">Guardar pago</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status"></div>
 
 </div>

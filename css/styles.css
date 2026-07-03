@@ -673,6 +673,137 @@ button, input, textarea, select { font-family: inherit; }
 }
 .btn-save:hover { background: #234AAE; }
 
+/* ===== Modal trabajo / pago ===== */
+.modal-sub { font-size: 12.5px; color: #6B7690; margin: 3px 0 12px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.locked-field {
+  border: 1px solid #E2E8F4;
+  background: #F7F8FC;
+  border-radius: 10px;
+  padding: 12px 13px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #232A56;
+}
+.form-stack select {
+  width: 100%;
+  border: 1px solid #DCE3F0;
+  border-radius: 10px;
+  padding: 12px 10px;
+  font-size: 15px;
+  outline: none;
+  background: #fff;
+  color: #22283A;
+}
+.form-stack select:focus { border-color: #2B57C8; }
+.form-stack .ta-sm { min-height: 60px; }
+.mono-input { font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
+.mono-input-lg {
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-weight: 700 !important;
+  font-size: 18px !important;
+  padding: 13px !important;
+}
+.mono-input-lg:focus { border-color: #1F8A5B !important; }
+
+.chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.cat-chip {
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 8px 13px;
+  border-radius: 17px;
+  background: #FFFFFF;
+  color: #4A5468;
+  border: 1px solid #DCE3F0;
+  user-select: none;
+}
+.cat-chip.active { background: #2B57C8; color: #FFFFFF; border-color: #2B57C8; }
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: #E9EDF6;
+  border-radius: 11px;
+  padding: 3px;
+}
+.segmented > div {
+  cursor: pointer;
+  text-align: center;
+  font-size: 13.5px;
+  font-weight: 700;
+  padding: 10px;
+  border-radius: 9px;
+  background: transparent;
+  color: #6B7690;
+  user-select: none;
+}
+.segmented > div.active {
+  background: #FFFFFF;
+  color: #232A56;
+  box-shadow: 0 1px 3px rgba(35,42,86,0.15);
+}
+
+.due-form-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #232A56;
+  background: #E8EEFB;
+  border: 1px solid #C7D6F5;
+  padding: 8px 12px;
+  border-radius: 16px;
+}
+.due-form-chip .x { cursor: pointer; color: #8A97B0; padding: 0 2px; }
+.no-dues-hint { font-size: 12px; color: #8A97B0; padding: 8px 2px; }
+.chip-row + .due-add { margin-top: 8px; }
+.due-add { display: flex; gap: 8px; }
+.due-add input { flex: 1; min-width: 0; }
+.due-add button {
+  background: #FFFFFF;
+  border: 1.5px solid #C7D6F5;
+  color: #2B57C8;
+  border-radius: 10px;
+  padding: 11px 15px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.due-add button:hover { background: #EEF3FD; }
+
+.preview-box {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #F7F8FC;
+  border-radius: 11px;
+  padding: 11px 14px;
+  font-size: 12.5px;
+  color: #6B7690;
+}
+.preview-box.green { background: #E9F5EF; color: #17694A; font-weight: 600; }
+.preview-amount { font-family: 'IBM Plex Mono', monospace; font-size: 14.5px; font-weight: 700; color: #17694A; }
+.preview-amount.red { color: #C2452D; }
+
+.quick-chips { display: flex; gap: 6px; margin-top: 7px; }
+.quick-chip {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: #232A56;
+  background: #EEF2FB;
+  padding: 7px 12px;
+  border-radius: 15px;
+  user-select: none;
+}
+.quick-chip.green { color: #1F8A5B; background: #E9F5EF; }
+
+.btn-save-green { background: #1F8A5B; }
+.btn-save-green:hover { background: #17694A; }
+
 /* ===== Toast ===== */
 .toast {
   position: fixed;

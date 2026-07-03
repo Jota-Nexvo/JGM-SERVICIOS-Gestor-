@@ -24,7 +24,7 @@ También funciona abriendo `index.html` directamente en el navegador.
 
 - [x] **Fase 1 — Esqueleto + datos:** modelo de datos + persistencia localStorage, seed de ejemplo, layout responsive (sidebar / tab bar + FAB), navegación entre las 4 pantallas, logo integrado.
 - [x] **Fase 2 — Clientes:** lista con secciones + buscador, ficha, alta/edición/borrado, WhatsApp.
-- [ ] **Fase 3 — Trabajos y pagos:** alta/edición de trabajos, pagos parciales, recálculo de saldo, historial.
+- [x] **Fase 3 — Trabajos y pagos:** alta/edición de trabajos, pagos parciales, recálculo de saldo, historial.
 - [ ] **Fase 4 — Inicio + Cobros + avisos:** métricas del Inicio, agenda de cobros agrupada, campanita, posponer, notificaciones.
 - [ ] **Fase 5 — Fotos:** IndexedDB, agregar desde el trabajo, visor, borrado en cascada.
 - [ ] **Fase 6 — Ajustes + respaldo:** categorías, aviso global, exportar/importar JSON, restablecer/borrar todo.

@@ -30,6 +30,10 @@
     var pa = a.split('-').map(Number), pb = b.split('-').map(Number);
     return Math.round((new Date(pb[0], pb[1] - 1, pb[2]) - new Date(pa[0], pa[1] - 1, pa[2])) / 864e5);
   }
+  function addDaysIso(iso, n) {
+    var p = iso.split('-').map(Number);
+    return localIso(new Date(p[0], p[1] - 1, p[2] + n));
+  }
   function dd(iso) { if (!iso) return ''; var p = iso.split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }
   function ddShort(iso) { if (!iso) return ''; var p = iso.split('-'); return p[2] + '/' + p[1]; }
 
@@ -247,6 +251,225 @@
     }
   }
 
+  // ===== Dinero en inputs =====
+  function parseMoney(str) { return Number(String(str || '').replace(/\D/g, '')) || 0; }
+  function moneyInput(el) {
+    el.addEventListener('input', function () {
+      var n = parseMoney(el.value);
+      el.value = n ? dots(n) : '';
+      if (el._onMoney) el._onMoney(n);
+    });
+  }
+
+  // ===== Modal trabajo =====
+  var jobModalEl = document.getElementById('modal-job');
+  var jForm = {};
+  function openNewJob(clientId) {
+    var S = state.data.settings;
+    if (state.data.clients.length === 0) { openClientModal(null); return; }
+    jForm = {
+      id: null,
+      clientId: clientId || '',
+      locked: !!clientId,
+      category: S.categories[0] || 'Otro',
+      dues: [],
+      dueNew: addDaysIso(todayIso(), 30),
+      credit: true
+    };
+    document.getElementById('jf-title').textContent = 'Nuevo trabajo';
+    document.getElementById('jf-desc').value = '';
+    document.getElementById('jf-date').value = todayIso();
+    document.getElementById('jf-price').value = '';
+    document.getElementById('jf-down').value = '';
+    document.getElementById('jf-remind').value = String(S.remindDays);
+    document.getElementById('jf-saldo-label').textContent = 'Saldo que quedará';
+    openJobModalCommon();
+  }
+  function openEditJob(j) {
+    jForm = {
+      id: j.id,
+      clientId: j.clientId,
+      locked: true,
+      category: j.category,
+      dues: (j.dueDates || []).filter(function (x) { return !x.done; }).map(function (x) { return { id: x.id, date: x.date }; }),
+      dueNew: addDaysIso(todayIso(), 30),
+      credit: !!j.credit
+    };
+    document.getElementById('jf-title').textContent = 'Editar trabajo';
+    document.getElementById('jf-desc').value = j.desc || '';
+    document.getElementById('jf-date').value = j.date || todayIso();
+    document.getElementById('jf-price').value = dots(j.price);
+    document.getElementById('jf-down').value = '';
+    document.getElementById('jf-remind').value = String(j.remind != null ? j.remind : state.data.settings.remindDays);
+    document.getElementById('jf-saldo-label').textContent = 'Saldo actual con este precio';
+    openJobModalCommon();
+  }
+  function openJobModalCommon() {
+    var err = document.getElementById('jf-err');
+    err.hidden = true;
+    err.textContent = '';
+    // cliente: fijo o seleccionable
+    var lockedEl = document.getElementById('jf-client-locked');
+    var selectEl = document.getElementById('jf-client');
+    if (jForm.locked) {
+      var c = state.data.clients.find(function (x) { return x.id === jForm.clientId; });
+      lockedEl.textContent = c ? c.name : '';
+      lockedEl.hidden = false;
+      selectEl.hidden = true;
+    } else {
+      var opts = '<option value="">Elegir cliente…</option>' + state.data.clients.slice()
+        .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); })
+        .map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name) + '</option>'; }).join('');
+      selectEl.innerHTML = opts;
+      selectEl.value = jForm.clientId || '';
+      lockedEl.hidden = true;
+      selectEl.hidden = false;
+    }
+    document.getElementById('jf-down-wrap').style.display = jForm.id ? 'none' : '';
+    document.getElementById('jf-due-new').value = jForm.dueNew;
+    renderJobModalDynamic();
+    jobModalEl.hidden = false;
+  }
+  function renderJobModalDynamic() {
+    // categorías
+    var catsEl = document.getElementById('jf-cats');
+    catsEl.innerHTML = (state.data.settings.categories || []).map(function (name) {
+      return '<span class="cat-chip' + (jForm.category === name ? ' active' : '') + '" data-cat="' + esc(name) + '">' + esc(name) + '</span>';
+    }).join('');
+    catsEl.querySelectorAll('[data-cat]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        jForm.category = el.getAttribute('data-cat');
+        renderJobModalDynamic();
+      });
+    });
+    // contado / crédito
+    document.getElementById('jf-contado').classList.toggle('active', !jForm.credit);
+    document.getElementById('jf-credito').classList.toggle('active', jForm.credit);
+    document.getElementById('jf-credit-block').style.display = jForm.credit ? '' : 'none';
+    // fechas de cobro
+    var duesEl = document.getElementById('jf-dues');
+    if (jForm.dues.length) {
+      duesEl.innerHTML = jForm.dues.map(function (x, i) {
+        return '<span class="due-form-chip">' + esc(dd(x.date)) + ' <span class="x" data-due-rm="' + i + '">✕</span></span>';
+      }).join('');
+    } else {
+      duesEl.innerHTML = '<span class="no-dues-hint">Sin fechas — el trabajo no generará avisos.</span>';
+    }
+    duesEl.querySelectorAll('[data-due-rm]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        jForm.dues.splice(Number(el.getAttribute('data-due-rm')), 1);
+        renderJobModalDynamic();
+      });
+    });
+    updateJobPreview();
+  }
+  function updateJobPreview() {
+    var price = parseMoney(document.getElementById('jf-price').value);
+    var minus;
+    if (jForm.id) {
+      var j = state.data.jobs.find(function (x) { return x.id === jForm.id; });
+      minus = j ? jobPaid(j) : 0;
+    } else {
+      minus = parseMoney(document.getElementById('jf-down').value);
+    }
+    document.getElementById('jf-saldo-preview').textContent = fmtG(Math.max(0, price - minus));
+  }
+  function closeJobModal() { jobModalEl.hidden = true; }
+  function submitJob() {
+    var errEl = document.getElementById('jf-err');
+    var showErr = function (m) { errEl.textContent = m; errEl.hidden = false; };
+    if (!jForm.locked) jForm.clientId = document.getElementById('jf-client').value;
+    var price = parseMoney(document.getElementById('jf-price').value);
+    var down = parseMoney(document.getElementById('jf-down').value);
+    if (!jForm.clientId) { showErr('Elegí un cliente.'); return; }
+    if (price <= 0) { showErr('Cargá el precio del trabajo.'); return; }
+    if (jForm.credit && !jForm.id && down > price) { showErr('La seña no puede superar el precio.'); return; }
+    var desc = document.getElementById('jf-desc').value;
+    var date = document.getElementById('jf-date').value || todayIso();
+    var remind = Math.max(0, Number(document.getElementById('jf-remind').value) || 0);
+    var credit = jForm.credit;
+    var dues = jForm.dues.slice();
+    var cid = jForm.clientId;
+    var isNew = !jForm.id;
+    mutate(function (d) {
+      if (jForm.id) {
+        var j = d.jobs.find(function (x) { return x.id === jForm.id; });
+        if (!j) return;
+        j.category = jForm.category; j.desc = desc; j.date = date; j.price = price; j.credit = credit; j.remind = remind;
+        var done = (j.dueDates || []).filter(function (x) { return x.done; });
+        j.dueDates = credit ? done.concat(dues.map(function (x) { return { id: x.id || uid(), date: x.date, done: false }; })) : done;
+      } else {
+        var payments = [];
+        if (credit && down > 0) payments.push({ id: uid(), amount: down, date: date, note: 'Seña' });
+        d.jobs.push({
+          id: uid(), clientId: cid, category: jForm.category, desc: desc, date: date, price: price,
+          credit: credit, remind: remind, payments: payments,
+          dueDates: credit ? dues.map(function (x) { return { id: uid(), date: x.date, done: false }; }) : [],
+          photos: []
+        });
+      }
+    });
+    closeJobModal();
+    if (isNew) { goClient(cid); toast('Trabajo guardado.'); }
+    else toast('Trabajo actualizado.');
+  }
+
+  // ===== Modal pago =====
+  var payModalEl = document.getElementById('modal-pay');
+  var pForm = {};
+  function openPay(jobId) {
+    var j = state.data.jobs.find(function (x) { return x.id === jobId; });
+    if (!j) return;
+    var c = state.data.clients.find(function (x) { return x.id === j.clientId; });
+    pForm = { jobId: jobId };
+    document.getElementById('pf-sub').textContent = (c ? c.name : '') + ' — ' + (j.desc || j.category);
+    document.getElementById('pf-saldo').textContent = fmtG(jobBalance(j));
+    document.getElementById('pf-amount').value = '';
+    document.getElementById('pf-date').value = todayIso();
+    document.getElementById('pf-note').value = '';
+    var err = document.getElementById('pf-err');
+    err.hidden = true;
+    err.textContent = '';
+    updatePayPreview();
+    payModalEl.hidden = false;
+    document.getElementById('pf-amount').focus();
+  }
+  function updatePayPreview() {
+    var j = state.data.jobs.find(function (x) { return x.id === pForm.jobId; });
+    if (!j) return;
+    var bal = jobBalance(j);
+    var amount = parseMoney(document.getElementById('pf-amount').value);
+    var txt = fmtG(Math.max(0, bal - amount));
+    if (amount > 0 && amount >= bal) txt += ' — ¡queda pagado!';
+    document.getElementById('pf-new').textContent = txt;
+  }
+  function closePayModal() { payModalEl.hidden = true; }
+  function submitPay() {
+    var amount = parseMoney(document.getElementById('pf-amount').value);
+    if (amount <= 0) {
+      var err = document.getElementById('pf-err');
+      err.textContent = 'Cargá el monto entregado.';
+      err.hidden = false;
+      return;
+    }
+    var date = document.getElementById('pf-date').value || todayIso();
+    var note = document.getElementById('pf-note').value || '';
+    var paidOff = false;
+    mutate(function (d) {
+      var j = d.jobs.find(function (x) { return x.id === pForm.jobId; });
+      if (!j) return;
+      j.payments = j.payments || [];
+      j.payments.push({ id: uid(), amount: amount, date: date, note: note });
+      var paid = j.payments.reduce(function (a, p) { return a + (Number(p.amount) || 0); }, 0);
+      if (paid >= (Number(j.price) || 0)) {
+        (j.dueDates || []).forEach(function (x) { x.done = true; });
+        paidOff = true;
+      }
+    });
+    closePayModal();
+    toast(paidOff ? 'Pago registrado — ¡trabajo saldado!' : 'Pago registrado.');
+  }
+
   // ===== WhatsApp =====
   function waLink(phone) {
     var digits = (phone || '').replace(/\D/g, '');
@@ -396,13 +619,14 @@
       } else if (j.credit) {
         html += '<div class="no-pay">Sin pagos registrados todavía.</div>';
       }
+      var jDelLabel = state.confirmKey === 'delj:' + j.id ? '¿Seguro?' : 'Eliminar';
       html += '<div class="job-actions">';
       if (j.credit && bal > 0) {
-        html += '<button type="button" class="btn-pay js-job-pay">+ Registrar pago</button>' +
-          '<button type="button" class="btn-ghost js-job-post">' + (pendDues.length ? 'Posponer' : 'Fijar fecha') + '</button>';
+        html += '<button type="button" class="btn-pay" data-job-pay="' + esc(j.id) + '">+ Registrar pago</button>' +
+          '<button type="button" class="btn-ghost" data-job-post="' + esc(j.id) + '">' + (pendDues.length ? 'Posponer' : 'Fijar fecha') + '</button>';
       }
-      html += '<button type="button" class="btn-ghost js-job-edit">Editar</button>' +
-        '<button type="button" class="btn-ghost-danger js-job-del">Eliminar</button></div></div>';
+      html += '<button type="button" class="btn-ghost" data-job-edit="' + esc(j.id) + '">Editar</button>' +
+        '<button type="button" class="btn-ghost-danger" data-job-del="' + esc(j.id) + '">' + jDelLabel + '</button></div></div>';
     }
 
     html += '</div>'; // /job-card
@@ -463,7 +687,7 @@
       });
     });
     box.querySelector('.js-client-new-job').addEventListener('click', function () {
-      toast('El alta de trabajos se habilita en la Fase 3.');
+      openNewJob(c.id);
     });
     box.querySelectorAll('[data-toggle-job]').forEach(function (el) {
       el.addEventListener('click', function () {
@@ -472,17 +696,36 @@
         render();
       });
     });
-    box.querySelectorAll('.js-job-pay').forEach(function (el) {
-      el.addEventListener('click', function (e) { e.stopPropagation(); toast('Los pagos se habilitan en la Fase 3.'); });
+    box.querySelectorAll('[data-job-pay]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openPay(el.getAttribute('data-job-pay'));
+      });
     });
-    box.querySelectorAll('.js-job-post').forEach(function (el) {
-      el.addEventListener('click', function (e) { e.stopPropagation(); toast('Las fechas de cobro se manejan en la Fase 4.'); });
+    box.querySelectorAll('[data-job-post]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        toast('Las fechas de cobro se manejan en la Fase 4.');
+      });
     });
-    box.querySelectorAll('.js-job-edit').forEach(function (el) {
-      el.addEventListener('click', function (e) { e.stopPropagation(); toast('La edición de trabajos se habilita en la Fase 3.'); });
+    box.querySelectorAll('[data-job-edit]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var j = state.data.jobs.find(function (x) { return x.id === el.getAttribute('data-job-edit'); });
+        if (j) openEditJob(j);
+      });
     });
-    box.querySelectorAll('.js-job-del').forEach(function (el) {
-      el.addEventListener('click', function (e) { e.stopPropagation(); toast('El borrado de trabajos se habilita en la Fase 3.'); });
+    box.querySelectorAll('[data-job-del]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var id = el.getAttribute('data-job-del');
+        confirm2('delj:' + id, function () {
+          mutate(function (d) {
+            d.jobs = d.jobs.filter(function (x) { return x.id !== id; });
+          });
+          toast('Trabajo eliminado.');
+        });
+      });
     });
   }
 
@@ -538,7 +781,9 @@
     el.addEventListener('click', function () { go(el.getAttribute('data-nav')); });
   });
   document.querySelectorAll('.js-new-job').forEach(function (el) {
-    el.addEventListener('click', function () { toast('El alta de trabajos se habilita en la Fase 3.'); });
+    el.addEventListener('click', function () {
+      openNewJob(state.view === 'cliente' ? state.clientId : null);
+    });
   });
   document.querySelectorAll('.js-new-client').forEach(function (el) {
     el.addEventListener('click', function () { openClientModal(null); });
@@ -548,12 +793,69 @@
     renderClientesList();
   });
 
-  // modal
+  // modal cliente
   modalEl.addEventListener('click', function (e) { if (e.target === modalEl) closeClientModal(); });
   document.getElementById('cf-cancel').addEventListener('click', closeClientModal);
   document.getElementById('cf-save').addEventListener('click', submitClient);
   document.getElementById('cf-name').addEventListener('keydown', function (e) { if (e.key === 'Enter') submitClient(); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modalEl.hidden) closeClientModal(); });
+
+  // modal trabajo
+  jobModalEl.addEventListener('click', function (e) { if (e.target === jobModalEl) closeJobModal(); });
+  document.getElementById('jf-cancel').addEventListener('click', closeJobModal);
+  document.getElementById('jf-save').addEventListener('click', submitJob);
+  document.getElementById('jf-contado').addEventListener('click', function () { jForm.credit = false; renderJobModalDynamic(); });
+  document.getElementById('jf-credito').addEventListener('click', function () { jForm.credit = true; renderJobModalDynamic(); });
+  document.getElementById('jf-add-due').addEventListener('click', function () {
+    var v = document.getElementById('jf-due-new').value;
+    if (!v) return;
+    jForm.dues.push({ date: v });
+    jForm.dues.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    document.getElementById('jf-due-new').value = addDaysIso(v, 30);
+    renderJobModalDynamic();
+  });
+  moneyInput(document.getElementById('jf-price'));
+  document.getElementById('jf-price')._onMoney = updateJobPreview;
+  moneyInput(document.getElementById('jf-down'));
+  document.getElementById('jf-down')._onMoney = updateJobPreview;
+
+  // modal pago
+  payModalEl.addEventListener('click', function (e) { if (e.target === payModalEl) closePayModal(); });
+  document.getElementById('pf-cancel').addEventListener('click', closePayModal);
+  document.getElementById('pf-save').addEventListener('click', submitPay);
+  moneyInput(document.getElementById('pf-amount'));
+  document.getElementById('pf-amount')._onMoney = updatePayPreview;
+  document.getElementById('pf-all').addEventListener('click', function () {
+    var j = state.data.jobs.find(function (x) { return x.id === pForm.jobId; });
+    if (!j) return;
+    document.getElementById('pf-amount').value = dots(jobBalance(j));
+    updatePayPreview();
+  });
+  document.getElementById('pf-half').addEventListener('click', function () {
+    var j = state.data.jobs.find(function (x) { return x.id === pForm.jobId; });
+    if (!j) return;
+    document.getElementById('pf-amount').value = dots(Math.round(jobBalance(j) / 2));
+    updatePayPreview();
+  });
+
+  // limpiar errores apenas se corrige el dato
+  function clearErrOnInput(inputIds, errId) {
+    inputIds.forEach(function (id) {
+      var el = document.getElementById(id);
+      var ev = el.tagName === 'SELECT' ? 'change' : 'input';
+      el.addEventListener(ev, function () { document.getElementById(errId).hidden = true; });
+    });
+  }
+  clearErrOnInput(['cf-name'], 'cf-err');
+  clearErrOnInput(['jf-client', 'jf-price', 'jf-down'], 'jf-err');
+  clearErrOnInput(['pf-amount'], 'pf-err');
+
+  // Escape cierra el modal abierto
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (!modalEl.hidden) closeClientModal();
+    if (!jobModalEl.hidden) closeJobModal();
+    if (!payModalEl.hidden) closePayModal();
+  });
 
   render();
 
@@ -566,9 +868,12 @@
     toast: toast,
     seedData: seedData,
     openClientModal: openClientModal,
+    openNewJob: openNewJob,
+    openEditJob: openEditJob,
+    openPay: openPay,
     helpers: {
-      uid: uid, esc: esc, initials: initials, todayIso: todayIso, dIso: dIso,
-      daysBetween: daysBetween, dd: dd, ddShort: ddShort, fmtG: fmtG, dots: dots, mill: mill,
+      uid: uid, esc: esc, initials: initials, todayIso: todayIso, dIso: dIso, addDaysIso: addDaysIso,
+      daysBetween: daysBetween, dd: dd, ddShort: ddShort, fmtG: fmtG, dots: dots, mill: mill, parseMoney: parseMoney,
       jobPaid: jobPaid, jobBalance: jobBalance, urgentCounts: urgentCounts,
       totalPending: totalPending, clientBalances: clientBalances, waLink: waLink, confirm2: confirm2
     }
