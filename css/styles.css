@@ -468,7 +468,7 @@ button, input, textarea, select { font-family: inherit; }
   flex-shrink: 0;
 }
 .info-main { flex: 1; min-width: 180px; }
-.info-name { font-size: 19px; font-weight: 700; color: #232A56; }
+.info-name { font-size: 19px; font-weight: 700; color: #232A56; overflow-wrap: anywhere; }
 .info-address { font-size: 13px; color: #6B7690; margin-top: 2px; }
 .info-meta { font-size: 12.5px; color: #8A97B0; margin-top: 1px; }
 .btn-wa {
@@ -491,6 +491,8 @@ button, input, textarea, select { font-family: inherit; }
   padding: 10px 13px;
   font-size: 13px;
   color: #4A5468;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .saldo-card {
@@ -536,7 +538,7 @@ button, input, textarea, select { font-family: inherit; }
 .cat-pill { font-size: 11px; font-weight: 700; color: #2B57C8; background: #E8EEFB; padding: 4px 10px; border-radius: 14px; }
 .job-date { font-size: 12px; color: #8A97B0; }
 .job-desc-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-.job-desc { font-size: 15px; font-weight: 700; color: #232A56; }
+.job-desc { font-size: 15px; font-weight: 700; color: #232A56; min-width: 0; overflow-wrap: anywhere; }
 .job-caret { color: #8A97B0; font-size: 13px; flex-shrink: 0; }
 .job-mode-row { display: flex; justify-content: space-between; align-items: center; margin-top: 7px; }
 .job-mode { font-size: 12.5px; color: #6B7690; }

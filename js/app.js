@@ -18,6 +18,10 @@
   function initials(name) {
     return (name || '?').trim().split(/\s+/).slice(0, 2).map(function (w) { return w[0]; }).join('').toUpperCase();
   }
+  // Normaliza para búsqueda: minúsculas y sin tildes/ñ (ramon = Ramón, dona = Doña)
+  function norm(s) {
+    return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
 
   // ===== Fechas =====
   function localIso(dt) {
@@ -600,7 +604,7 @@
     var D = state.data;
     var box = document.getElementById('clientes-list');
     var bal = clientBalances();
-    var q = (state.search || '').trim().toLowerCase();
+    var q = norm((state.search || '').trim());
     var html = '';
 
     if (D.clients.length === 0) {
@@ -610,7 +614,7 @@
         '<button type="button" class="btn-cta js-empty-new">+ Agregar cliente</button></div>';
     } else if (q) {
       var res = D.clients.filter(function (c) {
-        return ((c.name || '') + ' ' + (c.address || '') + ' ' + (c.phone || '') + ' ' + (c.ci || '')).toLowerCase().indexOf(q) !== -1;
+        return norm((c.name || '') + ' ' + (c.address || '') + ' ' + (c.phone || '') + ' ' + (c.ci || '')).indexOf(q) !== -1;
       });
       html += '<div class="section-label first">Resultados · ' + res.length + '</div>';
       html += res.map(function (c) { return clientRowHtml(c, bal[c.id] || 0); }).join('');
