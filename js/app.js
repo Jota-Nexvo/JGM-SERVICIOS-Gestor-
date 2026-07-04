@@ -63,8 +63,18 @@
     return Math.max(0, (Number(j.price) || 0) - jobPaid(j));
   }
 
-  // ===== Datos de ejemplo (seed) =====
+  // ===== Datos =====
+  // Arranque en blanco: la app empieza vacía para cargar datos reales.
   function seedData() {
+    return {
+      clients: [],
+      jobs: [],
+      settings: { categories: ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro'], remindDays: 3, notifEnabled: false, devices: [] },
+      demo: false
+    };
+  }
+  // Datos de ejemplo, opcionales (botón "Cargar datos de ejemplo" cuando está vacía).
+  function demoData() {
     var d = dIso;
     var clients = [
       { id: 'c1', name: 'Ramón Benítez', phone: '0981 456 789', address: 'Luque · Ruta Luque–San Ber km 4', ci: 'CI 1.234.567-8', notes: 'Portón verde, preguntar por la señora.' },
@@ -537,16 +547,27 @@
   // ===== Modal pago =====
   var payModalEl = document.getElementById('modal-pay');
   var pForm = {};
-  function openPay(jobId) {
+  // Marca las fechas de cobro como cumplidas solo si el trabajo está saldado
+  function recomputeDone(j) {
+    var paid = (j.payments || []).reduce(function (a, p) { return a + (Number(p.amount) || 0); }, 0);
+    var paidOff = paid >= (Number(j.price) || 0);
+    (j.dueDates || []).forEach(function (x) { x.done = paidOff; });
+    return paidOff;
+  }
+  function openPay(jobId, payId) {
     var j = state.data.jobs.find(function (x) { return x.id === jobId; });
     if (!j) return;
     var c = state.data.clients.find(function (x) { return x.id === j.clientId; });
-    pForm = { jobId: jobId };
+    var pay = payId ? (j.payments || []).find(function (x) { return x.id === payId; }) : null;
+    if (payId && !pay) return;
+    pForm = { jobId: jobId, payId: payId || null };
+    document.getElementById('pf-title').textContent = pay ? 'Editar pago' : 'Registrar pago';
+    document.getElementById('pf-save').textContent = pay ? 'Guardar cambios' : 'Guardar pago';
     document.getElementById('pf-sub').textContent = (c ? c.name : '') + ' — ' + (j.desc || j.category);
     document.getElementById('pf-saldo').textContent = fmtG(jobBalance(j));
-    document.getElementById('pf-amount').value = '';
-    document.getElementById('pf-date').value = todayIso();
-    document.getElementById('pf-note').value = '';
+    document.getElementById('pf-amount').value = pay ? dots(pay.amount) : '';
+    document.getElementById('pf-date').value = pay ? pay.date : todayIso();
+    document.getElementById('pf-note').value = pay ? (pay.note || '') : '';
     var err = document.getElementById('pf-err');
     err.hidden = true;
     err.textContent = '';
@@ -557,10 +578,13 @@
   function updatePayPreview() {
     var j = state.data.jobs.find(function (x) { return x.id === pForm.jobId; });
     if (!j) return;
-    var bal = jobBalance(j);
+    var price = Number(j.price) || 0;
+    var otherPaid = (j.payments || []).reduce(function (a, p) {
+      return a + (p.id === pForm.payId ? 0 : (Number(p.amount) || 0));
+    }, 0);
     var amount = parseMoney(document.getElementById('pf-amount').value);
-    var txt = fmtG(Math.max(0, bal - amount));
-    if (amount > 0 && amount >= bal) txt += ' — ¡queda pagado!';
+    var txt = fmtG(Math.max(0, price - otherPaid - amount));
+    if (amount > 0 && otherPaid + amount >= price) txt += ' — ¡queda pagado!';
     document.getElementById('pf-new').textContent = txt;
   }
   function closePayModal() { payModalEl.hidden = true; }
@@ -574,20 +598,31 @@
     }
     var date = document.getElementById('pf-date').value || todayIso();
     var note = document.getElementById('pf-note').value || '';
+    var editing = !!pForm.payId;
     var paidOff = false;
     mutate(function (d) {
       var j = d.jobs.find(function (x) { return x.id === pForm.jobId; });
       if (!j) return;
       j.payments = j.payments || [];
-      j.payments.push({ id: uid(), amount: amount, date: date, note: note });
-      var paid = j.payments.reduce(function (a, p) { return a + (Number(p.amount) || 0); }, 0);
-      if (paid >= (Number(j.price) || 0)) {
-        (j.dueDates || []).forEach(function (x) { x.done = true; });
-        paidOff = true;
+      if (editing) {
+        var p = j.payments.find(function (x) { return x.id === pForm.payId; });
+        if (p) { p.amount = amount; p.date = date; p.note = note; }
+      } else {
+        j.payments.push({ id: uid(), amount: amount, date: date, note: note });
       }
+      paidOff = recomputeDone(j);
     });
     closePayModal();
-    toast(paidOff ? 'Pago registrado — ¡trabajo saldado!' : 'Pago registrado.');
+    toast(editing ? 'Pago actualizado.' : (paidOff ? 'Pago registrado — ¡trabajo saldado!' : 'Pago registrado.'));
+  }
+  function delPayment(jobId, payId) {
+    mutate(function (d) {
+      var j = d.jobs.find(function (x) { return x.id === jobId; });
+      if (!j) return;
+      j.payments = (j.payments || []).filter(function (p) { return p.id !== payId; });
+      recomputeDone(j);
+    });
+    toast('Pago eliminado.');
   }
 
   // ===== Modal posponer / fijar fecha =====
@@ -860,8 +895,11 @@
       if (pays.length) {
         html += '<div class="job-detail-label">Historial de pagos</div><div class="pay-list">' +
           pays.map(function (p) {
+            var delLbl = state.confirmKey === 'delpay:' + p.id ? '¿?' : '✕';
             return '<div class="pay-row"><span class="pay-row-label">' + esc(dd(p.date) + (p.note ? ' · ' + p.note : '')) + '</span>' +
-              '<span class="pay-row-amount">+ ' + esc(fmtG(p.amount)) + '</span></div>';
+              '<span class="pay-row-right"><span class="pay-row-amount">+ ' + esc(fmtG(p.amount)) + '</span>' +
+              '<button type="button" class="pay-btn pay-edit" data-pay-edit="' + esc(j.id) + ':' + esc(p.id) + '" aria-label="Editar pago">✎</button>' +
+              '<button type="button" class="pay-btn pay-del" data-pay-del="' + esc(j.id) + ':' + esc(p.id) + '" aria-label="Borrar pago">' + delLbl + '</button></span></div>';
           }).join('') + '</div>';
       } else if (j.credit) {
         html += '<div class="no-pay">Sin pagos registrados todavía.</div>';
@@ -970,6 +1008,21 @@
       el.addEventListener('click', function (e) {
         e.stopPropagation();
         openPay(el.getAttribute('data-job-pay'));
+      });
+    });
+    box.querySelectorAll('[data-pay-edit]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var parts = el.getAttribute('data-pay-edit').split(':');
+        openPay(parts[0], parts[1]);
+      });
+    });
+    box.querySelectorAll('[data-pay-del]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var parts = el.getAttribute('data-pay-del').split(':');
+        var jobId = parts[0], payId = parts[1];
+        confirm2('delpay:' + payId, function () { delPayment(jobId, payId); });
       });
     });
     box.querySelectorAll('[data-job-post]').forEach(function (el) {
@@ -1270,15 +1323,15 @@
     };
     reader.readAsText(file);
   }
-  function resetDemo() {
-    var d = seedData();
+  function loadDemo() {
+    var d = demoData();
     persist(d);
     idbClear().catch(function () {});
     _pp = {};
     state.data = d;
     state.photoCache = {};
     state.viewer = null;
-    ajustesMsg = 'Datos de ejemplo restablecidos.';
+    ajustesMsg = 'Datos de ejemplo cargados. Cuando quieras empezar de cero, borralos.';
     render();
   }
   function wipeAll() {
@@ -1307,7 +1360,8 @@
     var notifStatus = perm === 'unsupported' ? 'este navegador no soporta notificaciones'
       : perm === 'denied' ? 'bloqueadas por el navegador (habilitalas en la configuración del sitio)'
       : notifOn ? 'activadas — te aviso una vez al día si hay cobros' : 'desactivadas';
-    var resetLabel = state.confirmKey === 'reset' ? '¿Seguro? Tocá otra vez' : 'Restablecer datos de ejemplo';
+    var isEmpty = state.data.clients.length === 0 && state.data.jobs.length === 0;
+    var demoLabel = state.confirmKey === 'demo' ? '¿Seguro? Tocá otra vez' : 'Cargar datos de ejemplo';
     var wipeLabel = state.confirmKey === 'wipe' ? '¿Seguro? Se pierde todo' : 'Borrar todos los datos';
 
     var html = '';
@@ -1342,8 +1396,11 @@
 
     // Datos de la app
     html += '<div class="set-card"><div class="set-title">Datos de la aplicación</div>' +
-      '<div class="set-desc">La app viene con datos de ejemplo para que la pruebes. Cuando quieras empezar de cero, borralos.</div>' +
-      '<div class="set-btn-row"><button type="button" class="set-btn-ghost js-reset">' + esc(resetLabel) + '</button>' +
+      '<div class="set-desc">' + (isEmpty
+        ? 'La app está vacía y lista para cargar tus datos. Si querés ver un ejemplo de cómo se usa, podés cargar datos de muestra (después borralos).'
+        : 'Cuando quieras vaciar todo y empezar de cero, borrá los datos.') + '</div>' +
+      '<div class="set-btn-row">' +
+      (isEmpty ? '<button type="button" class="set-btn-ghost js-demo">' + esc(demoLabel) + '</button>' : '') +
       '<button type="button" class="set-btn-danger js-wipe">' + esc(wipeLabel) + '</button></div></div>';
 
     // Seguridad (PIN + dispositivos)
@@ -1397,7 +1454,8 @@
     box.querySelector('#set-cat-new').addEventListener('keydown', function (e) { if (e.key === 'Enter') addCat(); });
     box.querySelector('.js-export').addEventListener('click', doExport);
     box.querySelector('.js-import').addEventListener('click', function () { document.getElementById('import-input').click(); });
-    box.querySelector('.js-reset').addEventListener('click', function () { confirm2('reset', resetDemo); });
+    var demoBtn = box.querySelector('.js-demo');
+    if (demoBtn) demoBtn.addEventListener('click', function () { confirm2('demo', loadDemo); });
     box.querySelector('.js-wipe').addEventListener('click', function () { confirm2('wipe', wipeAll); });
     var chg = box.querySelector('.js-change-pin');
     if (chg) chg.addEventListener('click', changePinFlow);

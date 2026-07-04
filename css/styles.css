@@ -593,9 +593,26 @@ button, input, textarea, select { font-family: inherit; }
 .photo-busy { font-size: 12px; color: #8A97B0; align-self: center; }
 
 .pay-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
-.pay-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
-.pay-row-label { color: #4A5468; }
+.pay-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; }
+.pay-row-label { color: #4A5468; min-width: 0; }
+.pay-row-right { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
 .pay-row-amount { font-family: 'IBM Plex Mono', monospace; font-weight: 600; color: #1F8A5B; white-space: nowrap; }
+.pay-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid #E2E8F4;
+  background: #FFFFFF;
+  color: #6B7690;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pay-btn:hover { background: #F3F5FA; }
+.pay-del { color: #C2452D; border-color: #F2D5CC; }
 .no-pay { font-size: 12.5px; color: #8A97B0; margin-bottom: 12px; }
 .job-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .btn-pay {

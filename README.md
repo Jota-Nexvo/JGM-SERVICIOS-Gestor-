@@ -2,6 +2,12 @@
 
 App personal para JGM SERVICIOS (perforación de pozos artesianos, mantenimiento, motobombas sumergibles y pesca de equipos) en Paraguay. Gestiona clientes, trabajos y cobros a crédito, 100% offline: todos los datos viven en el dispositivo (`localStorage` + IndexedDB), sin backend.
 
+La app **arranca vacía**, lista para cargar datos reales. Desde Ajustes hay un botón «Cargar datos de ejemplo» (solo cuando está vacía) por si querés ver cómo se usa.
+
+## Cargar números de WhatsApp
+
+En el campo «Teléfono / WhatsApp» de cada cliente cargá el número **normal**, como lo tenés en la agenda: `0975 829 708`. La app arma sola el link `wa.me/595975829708` al tocar el botón verde (le saca el 0 y le pone el 595). Funciona con o sin el 0, con espacios, o ya con el 595.
+
 La referencia de diseño y comportamiento es el prototipo `JGM Gestor.dc.html` incluido en `Gestor de clientes y pagos.zip`.
 
 ## Cómo probar
