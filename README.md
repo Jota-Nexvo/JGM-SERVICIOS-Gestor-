@@ -27,7 +27,7 @@ También funciona abriendo `index.html` directamente en el navegador.
 - [x] **Fase 3 — Trabajos y pagos:** alta/edición de trabajos, pagos parciales, recálculo de saldo, historial.
 - [x] **Fase 4 — Inicio + Cobros + avisos:** métricas del Inicio, agenda de cobros agrupada, campanita, posponer, notificaciones.
 - [x] **Fase 5 — Fotos:** IndexedDB, agregar desde el trabajo, visor, borrado en cascada.
-- [ ] **Fase 6 — Ajustes + respaldo:** categorías, aviso global, exportar/importar JSON, restablecer/borrar todo.
+- [x] **Fase 6 — Ajustes + respaldo:** categorías, aviso global, exportar/importar JSON, restablecer/borrar todo.
 - [ ] **Fase 7 — Pulido + PWA:** manifest + service worker offline, icono, revisión visual fina.
 
 ## Estructura

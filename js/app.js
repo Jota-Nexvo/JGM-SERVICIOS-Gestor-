@@ -126,6 +126,7 @@
     data: loadData()
   };
   var confirmTimer = null;
+  var ajustesMsg = '';     // mensaje de estado en Ajustes (respaldo, etc.)
   var _pp = {};            // fotos en carga (evita pedidos duplicados)
   var _photoTarget = null; // id de trabajo al que se le agregan fotos
   var PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
@@ -304,6 +305,7 @@
 
   // ===== Navegación =====
   function go(view) {
+    if (view !== 'ajustes') ajustesMsg = '';
     state.view = view;
     state.confirmKey = null;
     render();
@@ -1185,6 +1187,169 @@
     });
   }
 
+  // ===== Ajustes: respaldo (exportar / importar) =====
+  function testNotif() {
+    try { new Notification('JGM SERVICIOS', { body: 'Así te voy a avisar cuando haya cobros pendientes.' }); }
+    catch (e) { toast('Este dispositivo no puede mostrar la notificación de prueba.'); }
+  }
+  function doExport() {
+    var data = state.data;
+    var ids = [];
+    (data.jobs || []).forEach(function (j) { (j.photos || []).forEach(function (p) { ids.push(p.id); }); });
+    Promise.all(ids.map(function (id) { return idbGet(id).catch(function () { return null; }); })).then(function (vals) {
+      var photos = {};
+      ids.forEach(function (id, i) { if (vals[i]) photos[id] = vals[i]; });
+      var out = Object.assign({}, data, { photos: photos });
+      var blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'jgm-servicios-respaldo-' + todayIso() + '.json';
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      var n = Object.keys(photos).length;
+      ajustesMsg = 'Respaldo descargado' + (n ? ' (incluye ' + n + (n === 1 ? ' foto).' : ' fotos).') : '.');
+      render();
+    }).catch(function () { ajustesMsg = 'No se pudo exportar.'; render(); });
+  }
+  function doImportFile(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var d = JSON.parse(reader.result);
+        if (d && Array.isArray(d.clients) && Array.isArray(d.jobs) && d.settings) {
+          var photos = (d.photos && typeof d.photos === 'object' && !Array.isArray(d.photos)) ? d.photos : {};
+          delete d.photos;
+          var nF = Object.keys(photos).length;
+          _pp = {};
+          idbClear().then(function () {
+            return Promise.all(Object.keys(photos).map(function (id) { return idbPut(id, photos[id]); }));
+          }).catch(function () {});
+          persist(d);
+          state.data = d;
+          state.photoCache = photos;
+          state.viewer = null;
+          ajustesMsg = 'Respaldo importado: ' + d.clients.length + ' clientes, ' + d.jobs.length + ' trabajos' + (nF ? ' y ' + nF + ' fotos.' : '.');
+          render();
+        } else {
+          ajustesMsg = 'El archivo no parece un respaldo válido.';
+          render();
+        }
+      } catch (err) {
+        ajustesMsg = 'No se pudo leer el archivo.';
+        render();
+      }
+    };
+    reader.readAsText(file);
+  }
+  function resetDemo() {
+    var d = seedData();
+    persist(d);
+    idbClear().catch(function () {});
+    _pp = {};
+    state.data = d;
+    state.photoCache = {};
+    state.viewer = null;
+    ajustesMsg = 'Datos de ejemplo restablecidos.';
+    render();
+  }
+  function wipeAll() {
+    var d = {
+      clients: [], jobs: [],
+      settings: { categories: ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro'], remindDays: 3, notifEnabled: state.data.settings.notifEnabled },
+      demo: false
+    };
+    persist(d);
+    idbClear().catch(function () {});
+    _pp = {};
+    state.data = d;
+    state.photoCache = {};
+    state.viewer = null;
+    ajustesMsg = 'Se borraron todos los datos.';
+    render();
+  }
+
+  // ===== Render: Ajustes =====
+  function renderAjustes() {
+    var S = state.data.settings;
+    var box = document.getElementById('ajustes-content');
+    var perm = notifPerm();
+    var notifGranted = perm === 'granted';
+    var notifOn = isNotifOn();
+    var notifStatus = perm === 'unsupported' ? 'este navegador no soporta notificaciones'
+      : perm === 'denied' ? 'bloqueadas por el navegador (habilitalas en la configuración del sitio)'
+      : notifOn ? 'activadas — te aviso una vez al día si hay cobros' : 'desactivadas';
+    var resetLabel = state.confirmKey === 'reset' ? '¿Seguro? Tocá otra vez' : 'Restablecer datos de ejemplo';
+    var wipeLabel = state.confirmKey === 'wipe' ? '¿Seguro? Se pierde todo' : 'Borrar todos los datos';
+
+    var html = '';
+    // Notificaciones
+    html += '<div class="set-card"><div class="set-title">Notificaciones</div>' +
+      '<div class="set-desc">Estado: ' + esc(notifStatus) + '</div>' +
+      '<div class="set-btn-row"><button type="button" class="set-btn-primary js-notif-toggle">' +
+      (notifOn ? 'Desactivar avisos' : 'Activar notificaciones') + '</button>' +
+      (notifGranted ? '<button type="button" class="set-btn-ghost js-notif-test">Probar aviso</button>' : '') +
+      '</div></div>';
+
+    // Aviso anticipado
+    html += '<div class="set-card"><div class="set-title">Aviso anticipado por defecto</div>' +
+      '<div class="set-desc tight">Cuántos días antes de cada fecha de cobro querés que aparezca el aviso (se puede cambiar por trabajo).</div>' +
+      '<div class="remind-row"><input type="number" id="set-remind" min="0" max="60" value="' + esc(String(S.remindDays)) + '">' +
+      '<span>días antes</span></div></div>';
+
+    // Categorías
+    html += '<div class="set-card"><div class="set-title">Categorías de servicio</div><div class="cat-list">';
+    (S.categories || []).forEach(function (name, i) {
+      html += '<span class="cat-tag">' + esc(name) + ' <span class="x" data-cat-rm="' + i + '">✕</span></span>';
+    });
+    html += '</div><div class="cat-add"><input id="set-cat-new" type="text" autocomplete="off" placeholder="Nueva categoría…">' +
+      '<button type="button" class="set-btn-outline js-cat-add">Agregar</button></div></div>';
+
+    // Respaldo
+    html += '<div class="set-card"><div class="set-title">Respaldo de datos</div>' +
+      '<div class="set-desc">Los datos (incluidas las fotos de los trabajos) se guardan en este dispositivo. Exportá un respaldo cada tanto y guardalo en un lugar seguro.</div>' +
+      '<div class="set-btn-row"><button type="button" class="set-btn-primary js-export">Exportar respaldo</button>' +
+      '<button type="button" class="set-btn-ghost js-import">Importar respaldo</button></div>' +
+      (ajustesMsg ? '<div class="set-msg">' + esc(ajustesMsg) + '</div>' : '') + '</div>';
+
+    // Datos de la app
+    html += '<div class="set-card"><div class="set-title">Datos de la aplicación</div>' +
+      '<div class="set-desc">La app viene con datos de ejemplo para que la pruebes. Cuando quieras empezar de cero, borralos.</div>' +
+      '<div class="set-btn-row"><button type="button" class="set-btn-ghost js-reset">' + esc(resetLabel) + '</button>' +
+      '<button type="button" class="set-btn-danger js-wipe">' + esc(wipeLabel) + '</button></div></div>';
+
+    // Pie con logo + versión
+    html += '<div class="ajustes-footer"><img src="assets/jgm-logo.png" alt="JGM SERVICIOS">' +
+      '<span>Gestor de clientes y cobros · v0.1.0</span></div>';
+
+    box.innerHTML = html;
+
+    box.querySelector('.js-notif-toggle').addEventListener('click', toggleNotif);
+    var testBtn = box.querySelector('.js-notif-test');
+    if (testBtn) testBtn.addEventListener('click', testNotif);
+    box.querySelector('#set-remind').addEventListener('change', function (e) {
+      var v = Math.max(0, Math.min(60, Number(e.target.value) || 0));
+      mutate(function (d) { d.settings.remindDays = v; });
+    });
+    box.querySelectorAll('[data-cat-rm]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var i = Number(el.getAttribute('data-cat-rm'));
+        mutate(function (d) { d.settings.categories.splice(i, 1); });
+      });
+    });
+    var addCat = function () {
+      var input = box.querySelector('#set-cat-new');
+      var v = (input.value || '').trim();
+      if (!v) return;
+      mutate(function (d) { if (d.settings.categories.indexOf(v) === -1) d.settings.categories.push(v); });
+    };
+    box.querySelector('.js-cat-add').addEventListener('click', addCat);
+    box.querySelector('#set-cat-new').addEventListener('keydown', function (e) { if (e.key === 'Enter') addCat(); });
+    box.querySelector('.js-export').addEventListener('click', doExport);
+    box.querySelector('.js-import').addEventListener('click', function () { document.getElementById('import-input').click(); });
+    box.querySelector('.js-reset').addEventListener('click', function () { confirm2('reset', resetDemo); });
+    box.querySelector('.js-wipe').addEventListener('click', function () { confirm2('wipe', wipeAll); });
+  }
+
   // ===== Render: visor de fotos =====
   var viewerEl = document.getElementById('photo-viewer');
   function renderViewer() {
@@ -1253,6 +1418,7 @@
     if (view === 'clientes') renderClientesList();
     if (view === 'cliente') renderCliente();
     if (view === 'cobros') renderCobros();
+    if (view === 'ajustes') renderAjustes();
 
     // visor de fotos (overlay, independiente de la pantalla)
     renderViewer();
@@ -1367,6 +1533,13 @@
     var fs = Array.prototype.slice.call(e.target.files || []);
     e.target.value = '';
     addPhotos(_photoTarget, fs);
+  });
+
+  // input de importación de respaldo
+  document.getElementById('import-input').addEventListener('change', function (e) {
+    var file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (file) doImportFile(file);
   });
 
   // visor de fotos
