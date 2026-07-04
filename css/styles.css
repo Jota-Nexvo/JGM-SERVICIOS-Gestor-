@@ -592,6 +592,36 @@ button, input, textarea, select { font-family: inherit; }
 .photo-add span { font-size: 9.5px; font-weight: 700; }
 .photo-busy { font-size: 12px; color: #8A97B0; align-self: center; }
 
+/* Ubicación del cliente */
+.btn-map {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #2B57C8;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 11px 15px;
+  text-decoration: none;
+}
+.btn-map:hover { background: #234AAE; }
+.loc-empty { font-size: 13px; color: #8A97B0; margin-bottom: 10px; }
+.loc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.loc-btn {
+  background: #FFFFFF;
+  border: 1.5px solid #DCE3F0;
+  color: #232A56;
+  border-radius: 10px;
+  padding: 10px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.loc-btn.primary { background: #2B57C8; color: #fff; border-color: #2B57C8; font-weight: 700; }
+.loc-btn.primary:hover { background: #234AAE; }
+.loc-btn.danger { border-color: #F2D5CC; color: #C2452D; }
+
 .pay-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .pay-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; }
 .pay-row-label { color: #4A5468; min-width: 0; }

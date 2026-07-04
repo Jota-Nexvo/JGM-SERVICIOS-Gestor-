@@ -142,7 +142,7 @@
   var confirmTimer = null;
   var ajustesMsg = '';     // mensaje de estado en Ajustes (respaldo, etc.)
   var _pp = {};            // fotos en carga (evita pedidos duplicados)
-  var _photoTarget = null; // id de trabajo al que se le agregan fotos
+  var _photoTarget = null; // { kind:'job'|'client', id } al que se le agregan fotos
   var PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
   // ===== Fotos (IndexedDB) =====
@@ -173,8 +173,9 @@
   function idbDel(id) { return idbOp('readwrite', function (s) { return s.delete(id); }); }
   function idbClear() { return idbOp('readwrite', function (s) { return s.clear(); }); }
 
-  function loadJobPhotos(j) {
-    var ids = (j.photos || []).map(function (p) { return p.id; })
+  // Carga a memoria las fotos (dataURL) de una lista [{id}] desde IndexedDB
+  function loadPhotos(list) {
+    var ids = (list || []).map(function (p) { return p.id; })
       .filter(function (id) { return !(id in state.photoCache) && !_pp[id]; });
     if (!ids.length) return;
     ids.forEach(function (id) { _pp[id] = true; });
@@ -186,6 +187,13 @@
         render();
       }
     });
+  }
+  function loadJobPhotos(j) { loadPhotos(j.photos); }
+  // Devuelve el objeto (trabajo o cliente) dueño de las fotos
+  function photoOwner(kind, id) {
+    return kind === 'client'
+      ? state.data.clients.find(function (x) { return x.id === id; })
+      : state.data.jobs.find(function (x) { return x.id === id; });
   }
   function imgFromFile(file) {
     return new Promise(function (res, rej) {
@@ -210,16 +218,17 @@
       return cv.toDataURL('image/jpeg', 0.72);
     });
   }
-  function addPhotos(jobId, fileList) {
+  // Agrega fotos a un trabajo (kind 'job') o a un cliente (kind 'client')
+  function addPhotosTo(kind, id, fileList) {
     var files = Array.prototype.slice.call(fileList || []).filter(function (f) {
       return f && f.type && f.type.indexOf('image/') === 0;
     });
-    if (!files.length || !jobId) return;
+    if (!files.length || !id) return;
     toast(files.length === 1 ? 'Procesando la foto…' : 'Procesando ' + files.length + ' fotos…');
     var work = files.map(function (f) {
       return fileToDataUrl(f).then(function (url) {
-        var id = uid();
-        return idbPut(id, url).then(function () { return { id: id, url: url }; });
+        var pid = uid();
+        return idbPut(pid, url).then(function () { return { id: pid, url: url }; });
       }).catch(function () { return null; });
     });
     Promise.all(work).then(function (items) {
@@ -228,27 +237,27 @@
       ok.forEach(function (x) { state.photoCache[x.id] = x.url; });
       var entries = ok.map(function (x) { return { id: x.id, date: todayIso() }; });
       mutate(function (d) {
-        var j = d.jobs.find(function (x) { return x.id === jobId; });
-        if (j) j.photos = (j.photos || []).concat(entries);
+        var o = kind === 'client' ? d.clients.find(function (x) { return x.id === id; }) : d.jobs.find(function (x) { return x.id === id; });
+        if (o) o.photos = (o.photos || []).concat(entries);
       });
       toast(ok.length === 1 ? 'Foto agregada.' : ok.length + ' fotos agregadas.');
     });
   }
-  function delPhoto(jobId, phId) {
-    var j = state.data.jobs.find(function (x) { return x.id === jobId; });
-    var rest = j ? (j.photos || []).filter(function (p) { return p.id !== phId; }) : [];
+  function delPhotoFrom(kind, id, phId) {
+    var owner = photoOwner(kind, id);
+    var rest = owner ? (owner.photos || []).filter(function (p) { return p.id !== phId; }) : [];
     idbDel(phId).catch(function () {});
     var vw = state.viewer;
-    if (vw && vw.jobId === jobId) {
-      state.viewer = rest.length ? { jobId: jobId, idx: Math.min(vw.idx, rest.length - 1) } : null;
+    if (vw && vw.kind === kind && vw.id === id) {
+      state.viewer = rest.length ? { kind: kind, id: id, idx: Math.min(vw.idx, rest.length - 1) } : null;
     }
     mutate(function (d) {
-      var jj = d.jobs.find(function (x) { return x.id === jobId; });
-      if (jj) jj.photos = (jj.photos || []).filter(function (p) { return p.id !== phId; });
+      var o = kind === 'client' ? d.clients.find(function (x) { return x.id === id; }) : d.jobs.find(function (x) { return x.id === id; });
+      if (o) o.photos = (o.photos || []).filter(function (p) { return p.id !== phId; });
     });
   }
-  function delJobPhotos(j) {
-    ((j && j.photos) || []).forEach(function (p) { idbDel(p.id).catch(function () {}); });
+  function delOwnerPhotos(owner) {
+    ((owner && owner.photos) || []).forEach(function (p) { idbDel(p.id).catch(function () {}); });
   }
 
   // ===== Derivados =====
@@ -751,6 +760,31 @@
     return 'https://wa.me/' + (digits.indexOf('595') === 0 ? digits : '595' + digits.replace(/^0/, ''));
   }
 
+  // ===== Ubicación (GPS / link de mapa) =====
+  function captureLocation(cid) {
+    if (!navigator.geolocation) { toast('Este dispositivo no permite tomar la ubicación.'); return; }
+    toast('Obteniendo ubicación…');
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      var lat = pos.coords.latitude.toFixed(6), lng = pos.coords.longitude.toFixed(6);
+      var url = 'https://www.google.com/maps?q=' + lat + ',' + lng;
+      mutate(function (d) { var c = d.clients.find(function (x) { return x.id === cid; }); if (c) c.mapsUrl = url; });
+      toast('Ubicación guardada.');
+    }, function () {
+      toast('No se pudo obtener la ubicación. Revisá el permiso de ubicación del navegador.');
+    }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
+  }
+  function pasteLocation(cid) {
+    var url = (window.prompt('Pegá el link de Google Maps de este lugar:') || '').trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) { toast('El link no parece válido (tiene que empezar con http).'); return; }
+    mutate(function (d) { var c = d.clients.find(function (x) { return x.id === cid; }); if (c) c.mapsUrl = url; });
+    toast('Ubicación guardada.');
+  }
+  function clearLocation(cid) {
+    mutate(function (d) { var c = d.clients.find(function (x) { return x.id === cid; }); if (c) delete c.mapsUrl; });
+    toast('Ubicación quitada.');
+  }
+
   // ===== Render: lista de clientes =====
   function clientRowHtml(c, bal) {
     var js = jobsOf(c.id);
@@ -887,9 +921,9 @@
       html += '<div class="job-detail-label">Fotos del trabajo</div><div class="photo-grid">';
       (j.photos || []).forEach(function (p, i) {
         var src = state.photoCache[p.id] || PIXEL;
-        html += '<img class="photo-thumb" alt="Foto del trabajo" src="' + esc(src) + '" data-ph-open="' + esc(j.id) + ':' + i + '">';
+        html += '<img class="photo-thumb" alt="Foto del trabajo" src="' + esc(src) + '" data-ph-open="job:' + esc(j.id) + ':' + i + '">';
       });
-      html += '<div class="photo-add" data-ph-add="' + esc(j.id) + '">' +
+      html += '<div class="photo-add" data-ph-add="job:' + esc(j.id) + '">' +
         '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg>' +
         '<span>Agregar</span></div></div>';
       var pays = (j.payments || []).slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; });
@@ -923,6 +957,7 @@
     var box = document.getElementById('cliente-detail');
     var c = state.data.clients.find(function (x) { return x.id === state.clientId; });
     if (!c) { go('clientes'); return; }
+    loadPhotos(c.photos);
     var bal = clientBalances()[c.id] || 0;
     var js = jobsOf(c.id).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
     var wa = waLink(c.phone);
@@ -946,6 +981,34 @@
       ((c.notes || '').trim() ? '<div class="notes-box">' + esc(c.notes) + '</div>' : '') +
       '</div>';
 
+    // Ubicación
+    var loc = c.mapsUrl || '';
+    html += '<div class="info-card"><div class="job-detail-label">Ubicación</div>';
+    if (loc) {
+      html += '<a class="btn-map" href="' + esc(loc) + '" target="_blank" rel="noopener">' +
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.2-6-10a6 6 0 1 1 12 0c0 4.8-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg>Ver en el mapa</a>' +
+        '<div class="loc-actions">' +
+        '<button type="button" class="loc-btn" data-loc-gps="' + esc(c.id) + '">Actualizar (GPS)</button>' +
+        '<button type="button" class="loc-btn" data-loc-paste="' + esc(c.id) + '">Pegar link</button>' +
+        '<button type="button" class="loc-btn danger" data-loc-clear="' + esc(c.id) + '">Quitar</button></div>';
+    } else {
+      html += '<div class="loc-empty">Sin ubicación guardada.</div>' +
+        '<div class="loc-actions">' +
+        '<button type="button" class="loc-btn primary" data-loc-gps="' + esc(c.id) + '">📍 Marcar mi ubicación</button>' +
+        '<button type="button" class="loc-btn" data-loc-paste="' + esc(c.id) + '">Pegar link</button></div>';
+    }
+    html += '</div>';
+
+    // Fotos del lugar (del cliente, independientes de los trabajos)
+    html += '<div class="info-card"><div class="job-detail-label">Fotos del lugar</div><div class="photo-grid">';
+    (c.photos || []).forEach(function (p, i) {
+      var src = state.photoCache[p.id] || PIXEL;
+      html += '<img class="photo-thumb" alt="Foto del lugar" src="' + esc(src) + '" data-ph-open="client:' + esc(c.id) + ':' + i + '">';
+    });
+    html += '<div class="photo-add" data-ph-add="client:' + esc(c.id) + '">' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg>' +
+      '<span>Agregar</span></div></div></div>';
+
     html += '<div class="saldo-card"><span class="saldo-card-label">Saldo pendiente</span>' +
       '<span class="saldo-card-amount" style="color:' + (bal > 0 ? '#FF9D8A' : '#7BD8A8') + ';">' +
       esc(bal > 0 ? fmtG(bal) : 'Al día ✓') + '</span></div>';
@@ -962,9 +1025,19 @@
 
     box.querySelector('.js-back').addEventListener('click', function () { go('clientes'); });
     box.querySelector('.js-edit-client').addEventListener('click', function () { openClientModal(c); });
+    box.querySelectorAll('[data-loc-gps]').forEach(function (el) {
+      el.addEventListener('click', function () { captureLocation(el.getAttribute('data-loc-gps')); });
+    });
+    box.querySelectorAll('[data-loc-paste]').forEach(function (el) {
+      el.addEventListener('click', function () { pasteLocation(el.getAttribute('data-loc-paste')); });
+    });
+    box.querySelectorAll('[data-loc-clear]').forEach(function (el) {
+      el.addEventListener('click', function () { clearLocation(el.getAttribute('data-loc-clear')); });
+    });
     box.querySelector('.js-del-client').addEventListener('click', function () {
       confirm2('delc:' + c.id, function () {
-        jobsOf(c.id).forEach(function (x) { delJobPhotos(x); });
+        jobsOf(c.id).forEach(function (x) { delOwnerPhotos(x); });
+        delOwnerPhotos(c);
         mutate(function (d) {
           d.clients = d.clients.filter(function (x) { return x.id !== c.id; });
           d.jobs = d.jobs.filter(function (x) { return x.clientId !== c.id; });
@@ -990,7 +1063,8 @@
     box.querySelectorAll('[data-ph-add]').forEach(function (el) {
       el.addEventListener('click', function (e) {
         e.stopPropagation();
-        _photoTarget = el.getAttribute('data-ph-add');
+        var parts = el.getAttribute('data-ph-add').split(':');
+        _photoTarget = { kind: parts[0], id: parts[1] };
         photoInput.click();
       });
     });
@@ -998,10 +1072,10 @@
       el.addEventListener('click', function (e) {
         e.stopPropagation();
         var parts = el.getAttribute('data-ph-open').split(':');
-        var jobId = parts[0], idx = Number(parts[1]);
-        var jj = state.data.jobs.find(function (x) { return x.id === jobId; });
-        if (jj) loadJobPhotos(jj);
-        state.viewer = { jobId: jobId, idx: idx };
+        var kind = parts[0], id = parts[1], idx = Number(parts[2]);
+        var owner = photoOwner(kind, id);
+        if (owner) loadPhotos(owner.photos);
+        state.viewer = { kind: kind, id: id, idx: idx };
         render();
       });
     });
@@ -1045,7 +1119,7 @@
         var id = el.getAttribute('data-job-del');
         confirm2('delj:' + id, function () {
           var jj = state.data.jobs.find(function (x) { return x.id === id; });
-          if (jj) delJobPhotos(jj);
+          if (jj) delOwnerPhotos(jj);
           mutate(function (d) {
             d.jobs = d.jobs.filter(function (x) { return x.id !== id; });
           });
@@ -1281,6 +1355,7 @@
     var data = state.data;
     var ids = [];
     (data.jobs || []).forEach(function (j) { (j.photos || []).forEach(function (p) { ids.push(p.id); }); });
+    (data.clients || []).forEach(function (c) { (c.photos || []).forEach(function (p) { ids.push(p.id); }); });
     return Promise.all(ids.map(function (id) { return idbGet(id).catch(function () { return null; }); })).then(function (vals) {
       var photos = {};
       ids.forEach(function (id, i) { if (vals[i]) photos[id] = vals[i]; });
@@ -1541,8 +1616,8 @@
   function renderViewer() {
     var vs = state.viewer;
     if (!vs) { viewerEl.hidden = true; return; }
-    var j = state.data.jobs.find(function (x) { return x.id === vs.jobId; });
-    var list = j ? (j.photos || []) : [];
+    var owner = photoOwner(vs.kind, vs.id);
+    var list = owner ? (owner.photos || []) : [];
     if (!list.length) { state.viewer = null; viewerEl.hidden = true; return; }
     var idx = Math.max(0, Math.min(vs.idx, list.length - 1));
     var ph = list[idx];
@@ -1718,7 +1793,7 @@
   photoInput.addEventListener('change', function (e) {
     var fs = Array.prototype.slice.call(e.target.files || []);
     e.target.value = '';
-    addPhotos(_photoTarget, fs);
+    if (_photoTarget) addPhotosTo(_photoTarget.kind, _photoTarget.id, fs);
   });
 
   // input de importación de respaldo
@@ -1736,27 +1811,27 @@
   document.getElementById('vw-actions').addEventListener('click', function (e) { e.stopPropagation(); });
   document.getElementById('vw-prev').addEventListener('click', function () {
     var vs = state.viewer; if (!vs) return;
-    var j = state.data.jobs.find(function (x) { return x.id === vs.jobId; });
-    var n = j ? (j.photos || []).length : 0; if (!n) return;
-    state.viewer = { jobId: vs.jobId, idx: (vs.idx - 1 + n) % n };
+    var owner = photoOwner(vs.kind, vs.id);
+    var n = owner ? (owner.photos || []).length : 0; if (!n) return;
+    state.viewer = { kind: vs.kind, id: vs.id, idx: (vs.idx - 1 + n) % n };
     state.confirmKey = null;
     render();
   });
   document.getElementById('vw-next').addEventListener('click', function () {
     var vs = state.viewer; if (!vs) return;
-    var j = state.data.jobs.find(function (x) { return x.id === vs.jobId; });
-    var n = j ? (j.photos || []).length : 0; if (!n) return;
-    state.viewer = { jobId: vs.jobId, idx: (vs.idx + 1) % n };
+    var owner = photoOwner(vs.kind, vs.id);
+    var n = owner ? (owner.photos || []).length : 0; if (!n) return;
+    state.viewer = { kind: vs.kind, id: vs.id, idx: (vs.idx + 1) % n };
     state.confirmKey = null;
     render();
   });
   document.getElementById('vw-del').addEventListener('click', function () {
     var vs = state.viewer; if (!vs) return;
-    var j = state.data.jobs.find(function (x) { return x.id === vs.jobId; });
-    var list = j ? (j.photos || []) : [];
+    var owner = photoOwner(vs.kind, vs.id);
+    var list = owner ? (owner.photos || []) : [];
     if (!list.length) return;
     var ph = list[Math.max(0, Math.min(vs.idx, list.length - 1))];
-    confirm2('delph:' + ph.id, function () { delPhoto(vs.jobId, ph.id); });
+    confirm2('delph:' + ph.id, function () { delPhotoFrom(vs.kind, vs.id, ph.id); });
   });
 
   // =====================================================================

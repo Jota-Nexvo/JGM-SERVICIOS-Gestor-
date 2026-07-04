@@ -4,6 +4,8 @@ App personal para JGM SERVICIOS (perforación de pozos artesianos, mantenimiento
 
 La app **arranca vacía**, lista para cargar datos reales. Desde Ajustes hay un botón «Cargar datos de ejemplo» (solo cuando está vacía) por si querés ver cómo se usa.
 
+Cada cliente puede tener, además de sus trabajos: **fotos del lugar** (galería propia del cliente, aparte de las fotos de cada trabajo) y **ubicación** (botón «Marcar mi ubicación» por GPS o pegar un link de Google Maps, con «Ver en el mapa»). Todo entra en los respaldos.
+
 ## Cargar números de WhatsApp
 
 En el campo «Teléfono / WhatsApp» de cada cliente cargá el número **normal**, como lo tenés en la agenda: `0975 829 708`. La app arma sola el link `wa.me/595975829708` al tocar el botón verde (le saca el 0 y le pone el 595). Funciona con o sin el 0, con espacios, o ya con el 595.
