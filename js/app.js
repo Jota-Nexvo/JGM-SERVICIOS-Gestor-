@@ -639,6 +639,16 @@
   // ===== Notificaciones (máx. 1/día) =====
   function notifPerm() { return (typeof Notification !== 'undefined') ? Notification.permission : 'unsupported'; }
   function isNotifOn() { return !!state.data.settings.notifEnabled && notifPerm() === 'granted'; }
+  // En Android/Chrome `new Notification()` lanza excepción: hay que usar el
+  // service worker. Probamos primero el SW y caemos al constructor (escritorio).
+  function showNotif(title, opts) {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
+      return navigator.serviceWorker.ready
+        .then(function (reg) { return reg.showNotification(title, opts); })
+        .catch(function () { try { new Notification(title, opts); } catch (e) {} });
+    }
+    return Promise.resolve().then(function () { try { new Notification(title, opts); } catch (e) {} });
+  }
   function toggleNotif() {
     if (isNotifOn()) {
       mutate(function (d) { d.settings.notifEnabled = false; });
@@ -661,7 +671,10 @@
       var parts = [];
       if (u.venc) parts.push(u.venc + (u.venc === 1 ? ' cobro vencido' : ' cobros vencidos'));
       if (u.hoy) parts.push(u.hoy + ' para hoy');
-      new Notification('JGM SERVICIOS — Cobros', { body: 'Tenés ' + parts.join(' y ') + '. Abrí la app para ver los detalles.' });
+      showNotif('JGM SERVICIOS — Cobros', {
+        body: 'Tenés ' + parts.join(' y ') + '. Abrí la app para ver los detalles.',
+        icon: 'assets/icon-192.png', badge: 'assets/icon-192.png', tag: 'jgm-cobros'
+      });
       localStorage.setItem(key, t);
     } catch (e) {}
   }
@@ -1189,8 +1202,10 @@
 
   // ===== Ajustes: respaldo (exportar / importar) =====
   function testNotif() {
-    try { new Notification('JGM SERVICIOS', { body: 'Así te voy a avisar cuando haya cobros pendientes.' }); }
-    catch (e) { toast('Este dispositivo no puede mostrar la notificación de prueba.'); }
+    showNotif('JGM SERVICIOS', {
+      body: 'Así te voy a avisar cuando haya cobros pendientes.',
+      icon: 'assets/icon-192.png', badge: 'assets/icon-192.png', tag: 'jgm-test'
+    });
   }
   function doExport() {
     var data = state.data;
@@ -1576,6 +1591,13 @@
   // aviso del navegador: al abrir (una vez por día) y cada hora
   setTimeout(maybeNotify, 1800);
   setInterval(maybeNotify, 60 * 60 * 1000);
+
+  // service worker (PWA offline). No falla si el navegador no lo soporta.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+  }
 
   render();
 

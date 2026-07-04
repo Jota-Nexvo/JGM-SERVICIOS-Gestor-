@@ -28,7 +28,16 @@ También funciona abriendo `index.html` directamente en el navegador.
 - [x] **Fase 4 — Inicio + Cobros + avisos:** métricas del Inicio, agenda de cobros agrupada, campanita, posponer, notificaciones.
 - [x] **Fase 5 — Fotos:** IndexedDB, agregar desde el trabajo, visor, borrado en cascada.
 - [x] **Fase 6 — Ajustes + respaldo:** categorías, aviso global, exportar/importar JSON, restablecer/borrar todo.
-- [ ] **Fase 7 — Pulido + PWA:** manifest + service worker offline, icono, revisión visual fina.
+- [x] **Fase 7 — Pulido + PWA:** manifest + service worker offline, icono con el logo, notificaciones vía service worker (Android), revisión visual fina.
+
+## Instalar en el celular (PWA)
+
+La app es instalable y funciona sin conexión. Serví los archivos por HTTPS (GitHub Pages sirve) y desde el celular:
+
+- **Android (Chrome):** menú ⋮ → «Agregar a la pantalla de inicio» / «Instalar app». Queda como una app con el logo de JGM y arranca a pantalla completa, incluso sin internet.
+- **iPhone (Safari):** botón Compartir → «Agregar a inicio».
+
+Los datos y las fotos viven en el teléfono; hacé un respaldo desde Ajustes cada tanto.
 
 ## Estructura
 
