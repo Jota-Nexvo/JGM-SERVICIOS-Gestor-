@@ -309,6 +309,28 @@
     </div>
   </div>
 
+  <!-- ===== Visor de fotos ===== -->
+  <div class="viewer" id="photo-viewer" hidden>
+    <div class="viewer-bar">
+      <span class="viewer-label" id="vw-label"></span>
+      <span class="viewer-close" id="vw-close" role="button" aria-label="Cerrar">✕</span>
+    </div>
+    <div class="viewer-stage" id="vw-stage">
+      <img id="vw-img" alt="Foto del trabajo">
+    </div>
+    <div class="viewer-actions" id="vw-actions">
+      <div class="viewer-nav" id="vw-nav" hidden>
+        <button type="button" class="viewer-arrow" id="vw-prev" aria-label="Anterior">‹</button>
+        <span class="viewer-counter" id="vw-counter"></span>
+        <button type="button" class="viewer-arrow" id="vw-next" aria-label="Siguiente">›</button>
+      </div>
+      <button type="button" class="viewer-del" id="vw-del">Eliminar foto</button>
+    </div>
+  </div>
+
+  <!-- Input de fotos (oculto) -->
+  <input type="file" id="photo-input" accept="image/*" multiple hidden>
+
   <div class="toast" id="toast" role="status"></div>
 
 </div>

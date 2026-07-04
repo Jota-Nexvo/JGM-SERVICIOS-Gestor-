@@ -562,6 +562,35 @@ button, input, textarea, select { font-family: inherit; }
   color: #6B7690;
   margin-bottom: 7px;
 }
+.photo-grid { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 12px; }
+.photo-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 9px;
+  object-fit: cover;
+  border: 1px solid #E2E8F4;
+  background: #EEF1F7;
+  cursor: pointer;
+  display: block;
+}
+.photo-add {
+  width: 64px;
+  height: 64px;
+  border-radius: 9px;
+  border: 1.5px dashed #B9CBF2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  color: #2B57C8;
+  background: #FAFBFE;
+}
+.photo-add:hover { background: #EEF3FD; }
+.photo-add span { font-size: 9.5px; font-weight: 700; }
+.photo-busy { font-size: 12px; color: #8A97B0; align-self: center; }
+
 .pay-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .pay-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
 .pay-row-label { color: #4A5468; }
@@ -1015,6 +1044,65 @@ button, input, textarea, select { font-family: inherit; }
 .cobros-empty-text { font-size: 13px; color: #6B7690; margin-top: 4px; }
 
 .quick-chips.wrap { flex-wrap: wrap; margin-top: 0; }
+
+/* ===== Visor de fotos ===== */
+.viewer {
+  position: fixed;
+  inset: 0;
+  background: rgba(12,16,34,0.94);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+}
+.viewer[hidden] { display: none; }
+.viewer-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 18px 14px;
+}
+.viewer-label { color: #B9C2E2; font-size: 13px; font-weight: 600; }
+.viewer-close { color: #FFFFFF; font-size: 20px; cursor: pointer; padding: 4px 8px; }
+.viewer-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 0 14px;
+}
+.viewer-stage img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; }
+.viewer-actions {
+  display: flex;
+  gap: 10px;
+  padding: 14px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.viewer-nav { display: flex; gap: 10px; align-items: center; }
+.viewer-nav[hidden] { display: none; }
+.viewer-arrow {
+  width: 46px;
+  height: 46px;
+  border-radius: 23px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #FFFFFF;
+  font-size: 20px;
+  cursor: pointer;
+}
+.viewer-counter { color: #B9C2E2; font-size: 13px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
+.viewer-del {
+  background: rgba(210,84,58,0.16);
+  border: 1px solid rgba(255,157,138,0.45);
+  color: #FF9D8A;
+  border-radius: 23px;
+  padding: 13px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
 
 /* ===== Toast ===== */
 .toast {

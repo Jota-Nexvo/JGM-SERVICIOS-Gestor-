@@ -121,9 +121,120 @@
     search: '',
     expandedJobId: null,
     confirmKey: null,
+    photoCache: {},
+    viewer: null,
     data: loadData()
   };
   var confirmTimer = null;
+  var _pp = {};            // fotos en carga (evita pedidos duplicados)
+  var _photoTarget = null; // id de trabajo al que se le agregan fotos
+  var PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+  // ===== Fotos (IndexedDB) =====
+  var _idbP = null;
+  function idb() {
+    if (!_idbP) {
+      _idbP = new Promise(function (res, rej) {
+        var rq = indexedDB.open('jgm_fotos_v1', 1);
+        rq.onupgradeneeded = function () { rq.result.createObjectStore('fotos'); };
+        rq.onsuccess = function () { res(rq.result); };
+        rq.onerror = function () { rej(rq.error); };
+      });
+    }
+    return _idbP;
+  }
+  function idbOp(mode, fn) {
+    return idb().then(function (db) {
+      return new Promise(function (res, rej) {
+        var tx = db.transaction('fotos', mode);
+        var out = fn(tx.objectStore('fotos'));
+        tx.oncomplete = function () { res(out && out.result); };
+        tx.onerror = function () { rej(tx.error); };
+      });
+    });
+  }
+  function idbPut(id, val) { return idbOp('readwrite', function (s) { return s.put(val, id); }); }
+  function idbGet(id) { return idbOp('readonly', function (s) { return s.get(id); }); }
+  function idbDel(id) { return idbOp('readwrite', function (s) { return s.delete(id); }); }
+  function idbClear() { return idbOp('readwrite', function (s) { return s.clear(); }); }
+
+  function loadJobPhotos(j) {
+    var ids = (j.photos || []).map(function (p) { return p.id; })
+      .filter(function (id) { return !(id in state.photoCache) && !_pp[id]; });
+    if (!ids.length) return;
+    ids.forEach(function (id) { _pp[id] = true; });
+    Promise.all(ids.map(function (id) { return idbGet(id).catch(function () { return null; }); })).then(function (vals) {
+      var add = {};
+      ids.forEach(function (id, i) { if (vals[i]) add[id] = vals[i]; });
+      if (Object.keys(add).length) {
+        Object.assign(state.photoCache, add);
+        render();
+      }
+    });
+  }
+  function imgFromFile(file) {
+    return new Promise(function (res, rej) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () { res(img); setTimeout(function () { URL.revokeObjectURL(url); }, 1000); };
+      img.onerror = rej;
+      img.src = url;
+    });
+  }
+  function fileToDataUrl(file) {
+    var load = (typeof createImageBitmap === 'function')
+      ? createImageBitmap(file, { imageOrientation: 'from-image' }).catch(function () { return imgFromFile(file); })
+      : imgFromFile(file);
+    return load.then(function (img) {
+      var w = img.width, h = img.height;
+      var k = Math.min(1, 1280 / Math.max(w, h, 1));
+      var cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(w * k));
+      cv.height = Math.max(1, Math.round(h * k));
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      return cv.toDataURL('image/jpeg', 0.72);
+    });
+  }
+  function addPhotos(jobId, fileList) {
+    var files = Array.prototype.slice.call(fileList || []).filter(function (f) {
+      return f && f.type && f.type.indexOf('image/') === 0;
+    });
+    if (!files.length || !jobId) return;
+    toast(files.length === 1 ? 'Procesando la foto…' : 'Procesando ' + files.length + ' fotos…');
+    var work = files.map(function (f) {
+      return fileToDataUrl(f).then(function (url) {
+        var id = uid();
+        return idbPut(id, url).then(function () { return { id: id, url: url }; });
+      }).catch(function () { return null; });
+    });
+    Promise.all(work).then(function (items) {
+      var ok = items.filter(Boolean);
+      if (!ok.length) { toast('No se pudieron agregar las fotos.'); return; }
+      ok.forEach(function (x) { state.photoCache[x.id] = x.url; });
+      var entries = ok.map(function (x) { return { id: x.id, date: todayIso() }; });
+      mutate(function (d) {
+        var j = d.jobs.find(function (x) { return x.id === jobId; });
+        if (j) j.photos = (j.photos || []).concat(entries);
+      });
+      toast(ok.length === 1 ? 'Foto agregada.' : ok.length + ' fotos agregadas.');
+    });
+  }
+  function delPhoto(jobId, phId) {
+    var j = state.data.jobs.find(function (x) { return x.id === jobId; });
+    var rest = j ? (j.photos || []).filter(function (p) { return p.id !== phId; }) : [];
+    idbDel(phId).catch(function () {});
+    var vw = state.viewer;
+    if (vw && vw.jobId === jobId) {
+      state.viewer = rest.length ? { jobId: jobId, idx: Math.min(vw.idx, rest.length - 1) } : null;
+    }
+    mutate(function (d) {
+      var jj = d.jobs.find(function (x) { return x.id === jobId; });
+      if (jj) jj.photos = (jj.photos || []).filter(function (p) { return p.id !== phId; });
+    });
+  }
+  function delJobPhotos(j) {
+    ((j && j.photos) || []).forEach(function (p) { idbDel(p.id).catch(function () {}); });
+  }
 
   // ===== Derivados =====
   function clientBalances() {
@@ -718,6 +829,15 @@
 
     if (expanded) {
       html += '<div class="job-detail">';
+      // fotos
+      html += '<div class="job-detail-label">Fotos del trabajo</div><div class="photo-grid">';
+      (j.photos || []).forEach(function (p, i) {
+        var src = state.photoCache[p.id] || PIXEL;
+        html += '<img class="photo-thumb" alt="Foto del trabajo" src="' + esc(src) + '" data-ph-open="' + esc(j.id) + ':' + i + '">';
+      });
+      html += '<div class="photo-add" data-ph-add="' + esc(j.id) + '">' +
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg>' +
+        '<span>Agregar</span></div></div>';
       var pays = (j.payments || []).slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; });
       if (pays.length) {
         html += '<div class="job-detail-label">Historial de pagos</div><div class="pay-list">' +
@@ -787,6 +907,7 @@
     box.querySelector('.js-edit-client').addEventListener('click', function () { openClientModal(c); });
     box.querySelector('.js-del-client').addEventListener('click', function () {
       confirm2('delc:' + c.id, function () {
+        jobsOf(c.id).forEach(function (x) { delJobPhotos(x); });
         mutate(function (d) {
           d.clients = d.clients.filter(function (x) { return x.id !== c.id; });
           d.jobs = d.jobs.filter(function (x) { return x.clientId !== c.id; });
@@ -801,7 +922,29 @@
     box.querySelectorAll('[data-toggle-job]').forEach(function (el) {
       el.addEventListener('click', function () {
         var id = el.getAttribute('data-toggle-job');
+        if (state.expandedJobId !== id) {
+          var jj = state.data.jobs.find(function (x) { return x.id === id; });
+          if (jj) loadJobPhotos(jj);
+        }
         state.expandedJobId = state.expandedJobId === id ? null : id;
+        render();
+      });
+    });
+    box.querySelectorAll('[data-ph-add]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        _photoTarget = el.getAttribute('data-ph-add');
+        photoInput.click();
+      });
+    });
+    box.querySelectorAll('[data-ph-open]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var parts = el.getAttribute('data-ph-open').split(':');
+        var jobId = parts[0], idx = Number(parts[1]);
+        var jj = state.data.jobs.find(function (x) { return x.id === jobId; });
+        if (jj) loadJobPhotos(jj);
+        state.viewer = { jobId: jobId, idx: idx };
         render();
       });
     });
@@ -829,6 +972,8 @@
         e.stopPropagation();
         var id = el.getAttribute('data-job-del');
         confirm2('delj:' + id, function () {
+          var jj = state.data.jobs.find(function (x) { return x.id === id; });
+          if (jj) delJobPhotos(jj);
           mutate(function (d) {
             d.jobs = d.jobs.filter(function (x) { return x.id !== id; });
           });
@@ -1040,6 +1185,27 @@
     });
   }
 
+  // ===== Render: visor de fotos =====
+  var viewerEl = document.getElementById('photo-viewer');
+  function renderViewer() {
+    var vs = state.viewer;
+    if (!vs) { viewerEl.hidden = true; return; }
+    var j = state.data.jobs.find(function (x) { return x.id === vs.jobId; });
+    var list = j ? (j.photos || []) : [];
+    if (!list.length) { state.viewer = null; viewerEl.hidden = true; return; }
+    var idx = Math.max(0, Math.min(vs.idx, list.length - 1));
+    var ph = list[idx];
+    var multi = list.length > 1;
+    document.getElementById('vw-img').src = state.photoCache[ph.id] || PIXEL;
+    document.getElementById('vw-label').textContent =
+      'Foto ' + (idx + 1) + ' de ' + list.length + (ph.date ? ' · ' + dd(ph.date) : '');
+    document.getElementById('vw-nav').hidden = !multi;
+    document.getElementById('vw-counter').textContent = (idx + 1) + ' / ' + list.length;
+    document.getElementById('vw-del').textContent =
+      state.confirmKey === 'delph:' + ph.id ? '¿Seguro? Tocá otra vez' : 'Eliminar foto';
+    viewerEl.hidden = false;
+  }
+
   // ===== Render principal =====
   function render() {
     var view = state.view;
@@ -1087,6 +1253,9 @@
     if (view === 'clientes') renderClientesList();
     if (view === 'cliente') renderCliente();
     if (view === 'cobros') renderCobros();
+
+    // visor de fotos (overlay, independiente de la pantalla)
+    renderViewer();
   }
 
   // ===== Eventos globales =====
@@ -1176,13 +1345,59 @@
     document.getElementById('pp-err').hidden = true;
   });
 
-  // Escape cierra el modal abierto
+  // Escape cierra el visor o el modal abierto
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
+    if (!viewerEl.hidden) { closeViewer(); return; }
     if (!modalEl.hidden) closeClientModal();
     if (!jobModalEl.hidden) closeJobModal();
     if (!payModalEl.hidden) closePayModal();
     if (!postModalEl.hidden) closePostModal();
+  });
+  // flechas del teclado en el visor (escritorio)
+  document.addEventListener('keydown', function (e) {
+    if (viewerEl.hidden) return;
+    if (e.key === 'ArrowLeft') document.getElementById('vw-prev').click();
+    if (e.key === 'ArrowRight') document.getElementById('vw-next').click();
+  });
+
+  // input de fotos oculto
+  var photoInput = document.getElementById('photo-input');
+  photoInput.addEventListener('change', function (e) {
+    var fs = Array.prototype.slice.call(e.target.files || []);
+    e.target.value = '';
+    addPhotos(_photoTarget, fs);
+  });
+
+  // visor de fotos
+  function closeViewer() { state.viewer = null; state.confirmKey = null; render(); }
+  viewerEl.addEventListener('click', function (e) { if (e.target === viewerEl) closeViewer(); });
+  document.getElementById('vw-close').addEventListener('click', closeViewer);
+  document.getElementById('vw-stage').addEventListener('click', function (e) { e.stopPropagation(); });
+  document.getElementById('vw-actions').addEventListener('click', function (e) { e.stopPropagation(); });
+  document.getElementById('vw-prev').addEventListener('click', function () {
+    var vs = state.viewer; if (!vs) return;
+    var j = state.data.jobs.find(function (x) { return x.id === vs.jobId; });
+    var n = j ? (j.photos || []).length : 0; if (!n) return;
+    state.viewer = { jobId: vs.jobId, idx: (vs.idx - 1 + n) % n };
+    state.confirmKey = null;
+    render();
+  });
+  document.getElementById('vw-next').addEventListener('click', function () {
+    var vs = state.viewer; if (!vs) return;
+    var j = state.data.jobs.find(function (x) { return x.id === vs.jobId; });
+    var n = j ? (j.photos || []).length : 0; if (!n) return;
+    state.viewer = { jobId: vs.jobId, idx: (vs.idx + 1) % n };
+    state.confirmKey = null;
+    render();
+  });
+  document.getElementById('vw-del').addEventListener('click', function () {
+    var vs = state.viewer; if (!vs) return;
+    var j = state.data.jobs.find(function (x) { return x.id === vs.jobId; });
+    var list = j ? (j.photos || []) : [];
+    if (!list.length) return;
+    var ph = list[Math.max(0, Math.min(vs.idx, list.length - 1))];
+    confirm2('delph:' + ph.id, function () { delPhoto(vs.jobId, ph.id); });
   });
 
   // aviso del navegador: al abrir (una vez por día) y cada hora
@@ -1209,7 +1424,8 @@
       uid: uid, esc: esc, initials: initials, todayIso: todayIso, dIso: dIso, addDaysIso: addDaysIso,
       daysBetween: daysBetween, dd: dd, ddShort: ddShort, fmtG: fmtG, dots: dots, mill: mill, parseMoney: parseMoney,
       jobPaid: jobPaid, jobBalance: jobBalance, urgentCounts: urgentCounts,
-      totalPending: totalPending, clientBalances: clientBalances, waLink: waLink, confirm2: confirm2
+      totalPending: totalPending, clientBalances: clientBalances, waLink: waLink, confirm2: confirm2,
+      idbGet: idbGet, idbPut: idbPut, idbClear: idbClear, resetPhotoCache: function () { state.photoCache = {}; _pp = {}; }
     }
   };
 })();
