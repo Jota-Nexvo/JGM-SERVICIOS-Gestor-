@@ -76,13 +76,14 @@
   // Datos de ejemplo, opcionales (botón "Cargar datos de ejemplo" cuando está vacía).
   function demoData() {
     var d = dIso;
+    // Datos de muestra ficticios y sin teléfonos (el repo puede ser público).
     var clients = [
-      { id: 'c1', name: 'Ramón Benítez', phone: '0981 456 789', address: 'Luque · Ruta Luque–San Ber km 4', ci: 'CI 1.234.567-8', notes: 'Portón verde, preguntar por la señora.' },
-      { id: 'c2', name: 'Tambo Los Laureles', phone: '0982 111 222', address: 'Pirayú · Camino a Cerro Verá', ci: 'RUC 80045678-9', notes: '' },
-      { id: 'c3', name: 'Estancia San Rafael', phone: '0983 333 444', address: 'J. Augusto Saldívar · km 26', ci: 'RUC 80012345-6', notes: '' },
-      { id: 'c4', name: 'Granja Doña Nilda', phone: '0984 555 666', address: 'Itauguá · Barrio San Blas', ci: 'CI 2.345.678-9', notes: 'Atención: perros sueltos.' },
-      { id: 'c5', name: 'Colegio San José', phone: '021 555 123', address: 'Capiatá · km 20 Ruta 1', ci: 'RUC 80099887-7', notes: 'Hablar con el administrador, Sr. Ortiz.' },
-      { id: 'c6', name: 'Vivero La Esperanza', phone: '0985 777 888', address: 'Areguá · Av. del Lago 1450', ci: 'CI 3.456.789-0', notes: '' }
+      { id: 'c1', name: 'Cliente de ejemplo 1', phone: '', address: 'Luque', ci: '', notes: 'Datos de muestra — podés borrarlos.' },
+      { id: 'c2', name: 'Cliente de ejemplo 2', phone: '', address: 'Pirayú', ci: '', notes: '' },
+      { id: 'c3', name: 'Cliente de ejemplo 3', phone: '', address: 'J. Augusto Saldívar', ci: '', notes: '' },
+      { id: 'c4', name: 'Cliente de ejemplo 4', phone: '', address: 'Itauguá', ci: '', notes: '' },
+      { id: 'c5', name: 'Cliente de ejemplo 5', phone: '', address: 'Capiatá', ci: '', notes: '' },
+      { id: 'c6', name: 'Cliente de ejemplo 6', phone: '', address: 'Areguá', ci: '', notes: '' }
     ];
     var jobs = [
       { id: 'j1', clientId: 'c1', category: 'Perforación', desc: 'Perforación de pozo artesiano 48 m, encamisado 4"', date: d(-53), price: 14500000, credit: true, remind: 3, payments: [{ id: 'p1', amount: 5000000, date: d(-53), note: 'Seña' }, { id: 'p2', amount: 3000000, date: d(-27), note: 'Pagó en su casa' }], dueDates: [{ id: 'd1', date: d(-4), done: false }, { id: 'd2', date: d(13), done: false }], photos: [] },
