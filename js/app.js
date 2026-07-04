@@ -1096,7 +1096,17 @@
     mesLabel = mesLabel.charAt(0).toUpperCase() + mesLabel.slice(1);
     var mesPct = mesReal > 0 ? Math.min(100, Math.round(mesCob / mesReal * 100)) : 0;
 
-    var html = '<div class="stat-grid">' +
+    var html = '';
+    // recordatorio de copia de seguridad
+    if (backupDue()) {
+      var dsbI = daysSinceBackup();
+      var bmsg = dsbI === null
+        ? 'Todavía no guardaste una copia de tus datos. Guardala en tu Drive o correo para no perderlos.'
+        : 'Hace ' + dsbI + ' días que no guardás copia. Guardala para no perder tus datos si perdés el teléfono.';
+      html += '<div class="backup-banner"><span>' + esc(bmsg) + '</span>' +
+        '<button type="button" class="js-backup-now">Guardar copia</button></div>';
+    }
+    html += '<div class="stat-grid">' +
       '<div class="stat-tot"><div class="stat-tot-label">Total por cobrar</div>' +
       '<div class="stat-tot-amount">' + esc(fmtG(tot)) + '</div>' +
       '<div class="stat-tot-sub">' + esc(totSub) + '</div></div>' +
@@ -1162,6 +1172,8 @@
     box.querySelectorAll('[data-open-client]').forEach(function (el) {
       el.addEventListener('click', function () { goClient(el.getAttribute('data-open-client')); });
     });
+    var backupBtn = box.querySelector('.js-backup-now');
+    if (backupBtn) backupBtn.addEventListener('click', doCloudBackup);
   }
 
   // ===== Render: Cobros =====
@@ -1264,22 +1276,64 @@
       icon: 'assets/icon-192.png', badge: 'assets/icon-192.png', tag: 'jgm-test'
     });
   }
-  function doExport() {
+  // Arma el objeto de respaldo completo (datos + fotos) leyendo IndexedDB
+  function buildBackupObject() {
     var data = state.data;
     var ids = [];
     (data.jobs || []).forEach(function (j) { (j.photos || []).forEach(function (p) { ids.push(p.id); }); });
-    Promise.all(ids.map(function (id) { return idbGet(id).catch(function () { return null; }); })).then(function (vals) {
+    return Promise.all(ids.map(function (id) { return idbGet(id).catch(function () { return null; }); })).then(function (vals) {
       var photos = {};
       ids.forEach(function (id, i) { if (vals[i]) photos[id] = vals[i]; });
-      var out = Object.assign({}, data, { photos: photos });
-      var n = Object.keys(photos).length;
+      return Object.assign({}, data, { photos: photos });
+    });
+  }
+  function downloadBlob(blob, name) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+  }
+  // Registro de la última copia (para el recordatorio)
+  function markBackup() { try { localStorage.setItem('jgm_lastBackup', todayIso()); } catch (e) {} }
+  function lastBackupIso() { try { return localStorage.getItem('jgm_lastBackup') || null; } catch (e) { return null; } }
+  function daysSinceBackup() { var d = lastBackupIso(); return d ? daysBetween(d, todayIso()) : null; }
+  function backupDue() {
+    if (state.data.clients.length === 0 && state.data.jobs.length === 0) return false;
+    var n = daysSinceBackup();
+    return n === null || n >= 7;
+  }
+
+  // Copia para la nube: SIN cifrar (se abre sin PIN), enviada por el menú de compartir
+  function doCloudBackup() {
+    buildBackupObject().then(function (out) {
+      var n = Object.keys(out.photos || {}).length;
+      var name = 'jgm-servicios-copia-' + todayIso() + '.json';
+      var blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
+      var okMsg = 'Copia lista' + (n ? ' (incluye ' + n + (n === 1 ? ' foto)' : ' fotos)') : '') + '. Guardala en tu Drive o correo.';
+      var done = function () { markBackup(); ajustesMsg = okMsg; render(); };
+      var file;
+      try { file = new File([blob], name, { type: 'application/json' }); } catch (e) { file = null; }
+      if (file && navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+        navigator.share({ files: [file], title: 'Copia de seguridad — JGM SERVICIOS', text: 'Copia de tus clientes y cobros. Guardala en Drive o correo.' })
+          .then(done)
+          .catch(function (err) {
+            if (err && err.name === 'AbortError') return; // el usuario canceló
+            downloadBlob(blob, name); done();
+          });
+      } else {
+        downloadBlob(blob, name); done();
+      }
+    }).catch(function () { ajustesMsg = 'No se pudo preparar la copia.'; render(); });
+  }
+
+  // Respaldo cifrado (se abre con el PIN) — descarga a archivo
+  function doExport() {
+    buildBackupObject().then(function (out) {
+      var n = Object.keys(out.photos || {}).length;
       encryptBackup(out).then(function (envelope) {
-        var blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'jgm-servicios-respaldo-' + todayIso() + '.json';
-        a.click();
-        setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+        downloadBlob(new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' }), 'jgm-servicios-respaldo-cifrado-' + todayIso() + '.json');
+        markBackup();
         ajustesMsg = 'Respaldo cifrado descargado' + (n ? ' (incluye ' + n + (n === 1 ? ' foto).' : ' fotos).') : '.') + ' Se abre con tu PIN.';
         render();
       }).catch(function () { ajustesMsg = 'No se pudo cifrar el respaldo.'; render(); });
@@ -1389,10 +1443,20 @@
       '<button type="button" class="set-btn-outline js-cat-add">Agregar</button></div></div>';
 
     // Respaldo
+    var dsb = daysSinceBackup();
+    var lastTxt = dsb === null ? 'Todavía no guardaste ninguna copia.'
+      : dsb === 0 ? 'Última copia: hoy.'
+      : dsb === 1 ? 'Última copia: ayer.'
+      : 'Última copia: hace ' + dsb + ' días.';
+    var lastCls = (dsb === null || dsb >= 7) ? ' style="color:#C2452D;font-weight:600;"' : '';
     html += '<div class="set-card"><div class="set-title">Respaldo de datos</div>' +
-      '<div class="set-desc">Los datos (incluidas las fotos de los trabajos) se guardan en este dispositivo. Exportá un respaldo cada tanto y guardalo en un lugar seguro.</div>' +
-      '<div class="set-btn-row"><button type="button" class="set-btn-primary js-export">Exportar respaldo</button>' +
-      '<button type="button" class="set-btn-ghost js-import">Importar respaldo</button></div>' +
+      '<div class="set-desc tight">Guardá una copia cada tanto en tu Google Drive o correo. Si perdés el teléfono, con esa copia recuperás todo en otro.</div>' +
+      '<div class="set-desc"' + lastCls + '>' + esc(lastTxt) + '</div>' +
+      '<button type="button" class="set-btn-primary set-btn-full js-cloud">☁ Guardar copia en la nube</button>' +
+      '<div class="set-btn-row" style="margin-top:8px;">' +
+      '<button type="button" class="set-btn-ghost js-import">Importar respaldo</button>' +
+      '<button type="button" class="set-btn-ghost js-export">Exportar copia cifrada</button></div>' +
+      '<div class="set-hint">La copia en la nube se abre sin PIN (recuperás aunque lo olvides). La cifrada se abre con tu PIN.</div>' +
       (ajustesMsg ? '<div class="set-msg">' + esc(ajustesMsg) + '</div>' : '') + '</div>';
 
     // Datos de la app
@@ -1453,6 +1517,7 @@
     };
     box.querySelector('.js-cat-add').addEventListener('click', addCat);
     box.querySelector('#set-cat-new').addEventListener('keydown', function (e) { if (e.key === 'Enter') addCat(); });
+    box.querySelector('.js-cloud').addEventListener('click', doCloudBackup);
     box.querySelector('.js-export').addEventListener('click', doExport);
     box.querySelector('.js-import').addEventListener('click', function () { document.getElementById('import-input').click(); });
     var demoBtn = box.querySelector('.js-demo');

@@ -39,7 +39,9 @@ También funciona abriendo `index.html` directamente en el navegador.
 ## Seguridad
 
 - **PIN de acceso**: al abrir la app se pide un PIN (4-8 números). Se guarda solo un *hash* con PBKDF2-SHA256 (150.000 iteraciones); el PIN nunca se guarda en texto. Bloqueo automático tras 3 minutos sin uso y en cada recarga. Tras 5 intentos fallidos, espera de 30 s.
-- **Respaldo cifrado**: el archivo de respaldo se exporta cifrado con AES-GCM (clave derivada del PIN). Sin el PIN, el archivo es ilegible. Se importa con el mismo PIN.
+- **Copia en la nube (recomendada)**: botón «Guardar copia en la nube» que abre el menú de compartir de Android para enviar la copia a Google Drive, Gmail o WhatsApp. Esa copia **se abre sin PIN**, así se recuperan los datos aunque se olvide el PIN (guardarla en un lugar privado). La app avisa en Inicio cuando hace más de 7 días que no se guarda una copia.
+- **Respaldo cifrado (opcional)**: se exporta cifrado con AES-GCM (clave derivada del PIN). Sin el PIN, el archivo es ilegible. Se importa con el mismo PIN.
+- **Restaurar**: en un teléfono nuevo, instalar la app → crear PIN → «Importar respaldo» y elegir la copia (la importación reconoce las dos: sin cifrar y cifrada).
 - **Registro de dispositivos (máx. 4)**: cada dispositivo se registra al desbloquear; se gestionan desde Ajustes → Seguridad (ver y quitar). Como no hay servidor, el control real es el PIN: solo quien lo conoce puede abrir la app.
 - **Endurecido**: Content-Security-Policy estricta (scripts solo propios, sin `eval`), `referrer` desactivado, y todo el contenido de usuario escapado.
 - **Olvidé mi PIN**: reinicia la app borrando datos y PIN (recuperable desde un respaldo). No hay puerta trasera.
