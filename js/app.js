@@ -85,7 +85,7 @@
     return {
       clients: clients,
       jobs: jobs,
-      settings: { categories: ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro'], remindDays: 3, notifEnabled: false },
+      settings: { categories: ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro'], remindDays: 3, notifEnabled: false, devices: [] },
       demo: true
     };
   }
@@ -99,7 +99,10 @@
       var raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         var d = JSON.parse(raw);
-        if (d && Array.isArray(d.clients) && Array.isArray(d.jobs) && d.settings) return d;
+        if (d && Array.isArray(d.clients) && Array.isArray(d.jobs) && d.settings) {
+          if (!Array.isArray(d.settings.devices)) d.settings.devices = [];
+          return d;
+        }
       }
     } catch (e) {}
     var seed = seedData();
@@ -1215,43 +1218,54 @@
       var photos = {};
       ids.forEach(function (id, i) { if (vals[i]) photos[id] = vals[i]; });
       var out = Object.assign({}, data, { photos: photos });
-      var blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'jgm-servicios-respaldo-' + todayIso() + '.json';
-      a.click();
-      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
       var n = Object.keys(photos).length;
-      ajustesMsg = 'Respaldo descargado' + (n ? ' (incluye ' + n + (n === 1 ? ' foto).' : ' fotos).') : '.');
-      render();
+      encryptBackup(out).then(function (envelope) {
+        var blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'jgm-servicios-respaldo-' + todayIso() + '.json';
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+        ajustesMsg = 'Respaldo cifrado descargado' + (n ? ' (incluye ' + n + (n === 1 ? ' foto).' : ' fotos).') : '.') + ' Se abre con tu PIN.';
+        render();
+      }).catch(function () { ajustesMsg = 'No se pudo cifrar el respaldo.'; render(); });
     }).catch(function () { ajustesMsg = 'No se pudo exportar.'; render(); });
+  }
+  function applyImport(d) {
+    if (!(d && Array.isArray(d.clients) && Array.isArray(d.jobs) && d.settings)) {
+      ajustesMsg = 'El archivo no parece un respaldo válido.';
+      render();
+      return;
+    }
+    if (!Array.isArray(d.settings.devices)) d.settings.devices = [];
+    var photos = (d.photos && typeof d.photos === 'object' && !Array.isArray(d.photos)) ? d.photos : {};
+    delete d.photos;
+    var nF = Object.keys(photos).length;
+    _pp = {};
+    idbClear().then(function () {
+      return Promise.all(Object.keys(photos).map(function (id) { return idbPut(id, photos[id]); }));
+    }).catch(function () {});
+    persist(d);
+    state.data = d;
+    state.photoCache = photos;
+    state.viewer = null;
+    ensureDevice();
+    ajustesMsg = 'Respaldo importado: ' + d.clients.length + ' clientes, ' + d.jobs.length + ' trabajos' + (nF ? ' y ' + nF + ' fotos.' : '.');
+    render();
   }
   function doImportFile(file) {
     var reader = new FileReader();
     reader.onload = function () {
-      try {
-        var d = JSON.parse(reader.result);
-        if (d && Array.isArray(d.clients) && Array.isArray(d.jobs) && d.settings) {
-          var photos = (d.photos && typeof d.photos === 'object' && !Array.isArray(d.photos)) ? d.photos : {};
-          delete d.photos;
-          var nF = Object.keys(photos).length;
-          _pp = {};
-          idbClear().then(function () {
-            return Promise.all(Object.keys(photos).map(function (id) { return idbPut(id, photos[id]); }));
-          }).catch(function () {});
-          persist(d);
-          state.data = d;
-          state.photoCache = photos;
-          state.viewer = null;
-          ajustesMsg = 'Respaldo importado: ' + d.clients.length + ' clientes, ' + d.jobs.length + ' trabajos' + (nF ? ' y ' + nF + ' fotos.' : '.');
-          render();
-        } else {
-          ajustesMsg = 'El archivo no parece un respaldo válido.';
-          render();
-        }
-      } catch (err) {
-        ajustesMsg = 'No se pudo leer el archivo.';
-        render();
+      var parsed;
+      try { parsed = JSON.parse(reader.result); }
+      catch (err) { ajustesMsg = 'No se pudo leer el archivo.'; render(); return; }
+      if (parsed && parsed.jgm === 'backup' && parsed.data) {
+        // respaldo cifrado: se abre con el PIN actual
+        decryptBackup(parsed).then(function (plain) { applyImport(plain); })
+          .catch(function () { ajustesMsg = 'No se pudo abrir: el respaldo fue cifrado con otro PIN o está dañado.'; render(); });
+      } else {
+        // respaldo sin cifrar (compatibilidad)
+        applyImport(parsed);
       }
     };
     reader.readAsText(file);
@@ -1270,7 +1284,7 @@
   function wipeAll() {
     var d = {
       clients: [], jobs: [],
-      settings: { categories: ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro'], remindDays: 3, notifEnabled: state.data.settings.notifEnabled },
+      settings: { categories: ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro'], remindDays: 3, notifEnabled: state.data.settings.notifEnabled, devices: (state.data.settings.devices || []).slice() },
       demo: false
     };
     persist(d);
@@ -1332,6 +1346,28 @@
       '<div class="set-btn-row"><button type="button" class="set-btn-ghost js-reset">' + esc(resetLabel) + '</button>' +
       '<button type="button" class="set-btn-danger js-wipe">' + esc(wipeLabel) + '</button></div></div>';
 
+    // Seguridad (PIN + dispositivos)
+    if (cryptoOk) {
+      var devs = devices();
+      var myId = deviceId();
+      html += '<div class="set-card"><div class="set-title">Seguridad</div>' +
+        '<div class="set-desc">La app se abre con tu PIN y se bloquea sola tras unos minutos sin usarla. El respaldo se exporta cifrado.</div>' +
+        '<div class="set-btn-row" style="margin-bottom:12px;"><button type="button" class="set-btn-primary js-change-pin">Cambiar PIN</button>' +
+        '<button type="button" class="set-btn-ghost js-lock-now">Bloquear ahora</button></div>' +
+        '<div class="set-desc tight">Dispositivos autorizados · ' + devs.length + ' / 4</div><div class="dev-list">';
+      if (devs.length) {
+        devs.forEach(function (dv) {
+          html += '<div class="dev-item"><div><span class="lock-dev-name">' + esc(dv.name || 'Dispositivo') +
+            '</span>' + (dv.id === myId ? '<span class="dev-this">este</span>' : '') +
+            '<div class="lock-dev-meta">Agregado ' + esc(dd(dv.added)) + '</div></div>' +
+            '<button type="button" class="lock-dev-rm" data-dev-rm="' + esc(dv.id) + '">Quitar</button></div>';
+        });
+      } else {
+        html += '<div class="set-desc" style="margin:0;">Todavía no hay dispositivos registrados.</div>';
+      }
+      html += '</div></div>';
+    }
+
     // Pie con logo + versión
     html += '<div class="ajustes-footer"><img src="assets/jgm-logo.png" alt="JGM SERVICIOS">' +
       '<span>Gestor de clientes y cobros · v0.1.0</span></div>';
@@ -1363,6 +1399,17 @@
     box.querySelector('.js-import').addEventListener('click', function () { document.getElementById('import-input').click(); });
     box.querySelector('.js-reset').addEventListener('click', function () { confirm2('reset', resetDemo); });
     box.querySelector('.js-wipe').addEventListener('click', function () { confirm2('wipe', wipeAll); });
+    var chg = box.querySelector('.js-change-pin');
+    if (chg) chg.addEventListener('click', changePinFlow);
+    var lk = box.querySelector('.js-lock-now');
+    if (lk) lk.addEventListener('click', lockAppNow);
+    box.querySelectorAll('[data-dev-rm]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var rid = el.getAttribute('data-dev-rm');
+        mutate(function (d) { d.settings.devices = (d.settings.devices || []).filter(function (x) { return x.id !== rid; }); });
+        toast('Dispositivo quitado.');
+      });
+    });
   }
 
   // ===== Render: visor de fotos =====
@@ -1588,6 +1635,241 @@
     confirm2('delph:' + ph.id, function () { delPhoto(vs.jobId, ph.id); });
   });
 
+  // =====================================================================
+  // ===== Seguridad: PIN de acceso, bloqueo y dispositivos ==============
+  // =====================================================================
+  var LOCK_KEY = 'jgm_lock_v1';
+  var DEVID_KEY = 'jgm_device_id';
+  var PBKDF2_ITER = 150000;
+  var cryptoOk = !!(window.crypto && crypto.subtle && crypto.getRandomValues);
+  var unlocked = false;
+  var sessionPin = null;
+  var lockMode = 'unlock';
+  var failCount = 0;
+  var blockUntil = 0;
+
+  // --- utilidades cripto ---
+  function ab2b64(buf) {
+    var b = new Uint8Array(buf), s = '';
+    for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+    return btoa(s);
+  }
+  function b642ab(s) {
+    var bin = atob(s), b = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+    return b.buffer;
+  }
+  function randBytes(n) { return crypto.getRandomValues(new Uint8Array(n)); }
+  function deriveBits(pin, saltAb, iter) {
+    return crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits'])
+      .then(function (k) {
+        return crypto.subtle.deriveBits({ name: 'PBKDF2', salt: saltAb, iterations: iter, hash: 'SHA-256' }, k, 256);
+      });
+  }
+  function deriveAesKey(pin, saltAb, iter) {
+    return crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveKey'])
+      .then(function (k) {
+        return crypto.subtle.deriveKey(
+          { name: 'PBKDF2', salt: saltAb, iterations: iter, hash: 'SHA-256' },
+          k, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+      });
+  }
+  function hasLock() { return !!localStorage.getItem(LOCK_KEY); }
+  function setPin(pin) {
+    var salt = randBytes(16);
+    return deriveBits(pin, salt.buffer, PBKDF2_ITER).then(function (bits) {
+      localStorage.setItem(LOCK_KEY, JSON.stringify({ salt: ab2b64(salt.buffer), iter: PBKDF2_ITER, hash: ab2b64(bits) }));
+    });
+  }
+  function verifyPin(pin) {
+    var rec;
+    try { rec = JSON.parse(localStorage.getItem(LOCK_KEY)); } catch (e) { return Promise.resolve(false); }
+    if (!rec) return Promise.resolve(false);
+    return deriveBits(pin, b642ab(rec.salt), rec.iter).then(function (bits) { return ab2b64(bits) === rec.hash; });
+  }
+  function encryptBackup(obj) {
+    var salt = randBytes(16), iv = randBytes(12);
+    return deriveAesKey(sessionPin, salt.buffer, PBKDF2_ITER).then(function (key) {
+      return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(JSON.stringify(obj)));
+    }).then(function (ct) {
+      return { jgm: 'backup', v: 1, alg: 'AES-GCM', kdf: 'PBKDF2-SHA256', iter: PBKDF2_ITER,
+        salt: ab2b64(salt.buffer), iv: ab2b64(iv.buffer), data: ab2b64(ct) };
+    });
+  }
+  function decryptBackup(env) {
+    return deriveAesKey(sessionPin, b642ab(env.salt), env.iter || PBKDF2_ITER).then(function (key) {
+      return crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(b642ab(env.iv)) }, key, b642ab(env.data));
+    }).then(function (pt) { return JSON.parse(new TextDecoder().decode(pt)); });
+  }
+
+  // --- registro de dispositivos (máx. 4) ---
+  function deviceId() {
+    var id = localStorage.getItem(DEVID_KEY);
+    if (!id) { id = uid() + uid(); localStorage.setItem(DEVID_KEY, id); }
+    return id;
+  }
+  function guessDeviceName() {
+    var ua = navigator.userAgent || '';
+    if (/iPhone/.test(ua)) return 'iPhone';
+    if (/iPad/.test(ua)) return 'iPad';
+    if (/Android/.test(ua)) return 'Android';
+    if (/Windows/.test(ua)) return 'Windows';
+    if (/Mac/.test(ua)) return 'Mac';
+    if (/Linux/.test(ua)) return 'Linux';
+    return 'Dispositivo';
+  }
+  function devices() { return (state.data.settings.devices || []); }
+  function deviceRegistered() {
+    var id = deviceId();
+    return devices().some(function (x) { return x.id === id; });
+  }
+  function registerDeviceIfNeeded() {
+    if (deviceRegistered()) return;
+    var id = deviceId();
+    mutate(function (d) {
+      d.settings.devices = d.settings.devices || [];
+      d.settings.devices.push({ id: id, name: guessDeviceName(), added: todayIso() });
+    });
+  }
+  function ensureDevice() { /* usado tras importar: no fuerza registro */ }
+
+  // --- DOM de la pantalla de bloqueo ---
+  var lockEl = document.getElementById('lock-screen');
+  var lkTitle = document.getElementById('lock-title');
+  var lkSub = document.getElementById('lock-sub');
+  var lkIn1 = document.getElementById('lock-input');
+  var lkIn2 = document.getElementById('lock-input2');
+  var lkErr = document.getElementById('lock-err');
+  var lkGo = document.getElementById('lock-go');
+  var lkForgot = document.getElementById('lock-forgot');
+  var lkDevices = document.getElementById('lock-devices');
+  var appEl = document.querySelector('.app');
+
+  function lockErr(msg) { lkErr.textContent = msg; lkErr.hidden = !msg; }
+  function openLock(mode) {
+    lockMode = mode;
+    lkIn1.value = ''; lkIn2.value = '';
+    lockErr('');
+    lkDevices.hidden = true; lkDevices.innerHTML = '';
+    lkIn1.hidden = false; lkGo.hidden = false; lkGo.disabled = false;
+    if (mode === 'create' || mode === 'change') {
+      lkTitle.textContent = mode === 'change' ? 'Nuevo PIN' : 'Creá tu PIN';
+      lkSub.textContent = 'Elegí un PIN de 4 a 8 números para proteger tus datos.';
+      lkIn1.placeholder = 'PIN nuevo'; lkIn2.hidden = false; lkForgot.hidden = true;
+      lkGo.textContent = 'Guardar PIN';
+    } else if (mode === 'unlock') {
+      lkTitle.textContent = 'Ingresá tu PIN';
+      lkSub.textContent = 'Desbloqueá para ver tus datos.';
+      lkIn1.placeholder = 'PIN'; lkIn2.hidden = true; lkForgot.hidden = false;
+      lkGo.textContent = 'Entrar';
+    }
+    appEl.hidden = true;
+    lockEl.hidden = false;
+    setTimeout(function () { lkIn1.focus(); }, 50);
+  }
+  function showDeviceLimit(pin) {
+    lockMode = 'limit';
+    lkTitle.textContent = 'Demasiados dispositivos';
+    lkSub.textContent = 'Esta app está limitada a 4 dispositivos. Quitá uno para usar este.';
+    lkIn1.hidden = true; lkIn2.hidden = true; lkGo.hidden = true; lkForgot.hidden = true;
+    lockErr('');
+    lkDevices.hidden = false;
+    var html = '';
+    devices().forEach(function (dv) {
+      html += '<div class="lock-dev-row"><div><div class="lock-dev-name">' + esc(dv.name || 'Dispositivo') + '</div>' +
+        '<div class="lock-dev-meta">Agregado ' + esc(dd(dv.added)) + '</div></div>' +
+        '<button type="button" class="lock-dev-rm" data-rm="' + esc(dv.id) + '">Quitar</button></div>';
+    });
+    lkDevices.innerHTML = html;
+    lkDevices.querySelectorAll('[data-rm]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var rid = el.getAttribute('data-rm');
+        mutate(function (d) { d.settings.devices = (d.settings.devices || []).filter(function (x) { return x.id !== rid; }); });
+        if (devices().length < 4) enterApp(pin); else showDeviceLimit(pin);
+      });
+    });
+    appEl.hidden = true;
+    lockEl.hidden = false;
+  }
+  var autoT = null;
+  function startAuto() { clearTimeout(autoT); autoT = setTimeout(function () { if (unlocked) lockNow(); }, 3 * 60 * 1000); }
+  function bumpAuto() { if (unlocked) startAuto(); }
+  function lockNow() {
+    unlocked = false; sessionPin = null;
+    clearTimeout(autoT);
+    openLock('unlock');
+  }
+  function enterApp(pin) {
+    sessionPin = pin;
+    if (!deviceRegistered() && devices().length >= 4) { showDeviceLimit(pin); return; }
+    registerDeviceIfNeeded();
+    unlocked = true;
+    lockEl.hidden = true;
+    appEl.hidden = false;
+    render();
+    startAuto();
+  }
+  function handleLockGo() {
+    var v1 = (lkIn1.value || '').trim();
+    if (lockMode === 'create' || lockMode === 'change') {
+      var v2 = (lkIn2.value || '').trim();
+      if (!/^\d{4,8}$/.test(v1)) { lockErr('El PIN debe tener de 4 a 8 números.'); return; }
+      if (v1 !== v2) { lockErr('Los PIN no coinciden.'); return; }
+      setPin(v1).then(function () {
+        if (lockMode === 'change') {
+          sessionPin = v1;
+          lockEl.hidden = true; appEl.hidden = false;
+          toast('PIN actualizado.');
+          render();
+          startAuto();
+        } else {
+          enterApp(v1);
+        }
+      }).catch(function () { lockErr('No se pudo guardar el PIN.'); });
+      return;
+    }
+    // unlock
+    if (Date.now() < blockUntil) { lockErr('Demasiados intentos. Esperá un momento.'); return; }
+    if (!v1) { lockErr('Ingresá tu PIN.'); return; }
+    lkGo.disabled = true;
+    verifyPin(v1).then(function (ok) {
+      lkGo.disabled = false;
+      if (ok) { failCount = 0; enterApp(v1); }
+      else {
+        failCount++;
+        if (failCount >= 5) { blockUntil = Date.now() + 30000; lockErr('Demasiados intentos. Esperá 30 segundos.'); }
+        else lockErr('PIN incorrecto.');
+        lkIn1.value = '';
+      }
+    });
+  }
+  lkGo.addEventListener('click', handleLockGo);
+  lkIn1.addEventListener('keydown', function (e) { if (e.key === 'Enter') handleLockGo(); });
+  lkIn2.addEventListener('keydown', function (e) { if (e.key === 'Enter') handleLockGo(); });
+  lkIn1.addEventListener('input', function () { lockErr(''); });
+  lkForgot.addEventListener('click', function () {
+    if (lkForgot._armed) {
+      // borra todo (PIN + datos + fotos) — recuperable desde un respaldo
+      localStorage.removeItem(LOCK_KEY);
+      var fresh = { clients: [], jobs: [], settings: { categories: ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro'], remindDays: 3, notifEnabled: false, devices: [] }, demo: false };
+      persist(fresh); state.data = fresh; state.photoCache = {}; _pp = {};
+      idbClear().catch(function () {});
+      openLock('create');
+      return;
+    }
+    lkForgot._armed = true;
+    lkForgot.textContent = 'Se borrarán TODOS los datos. Tocá otra vez para confirmar';
+    setTimeout(function () { lkForgot._armed = false; lkForgot.textContent = 'Olvidé mi PIN'; }, 4000);
+  });
+  document.addEventListener('pointerdown', bumpAuto, true);
+  document.addEventListener('keydown', bumpAuto, true);
+  // al volver a la app tras estar oculta un rato, re-evaluar (el timer sigue corriendo)
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) bumpAuto(); });
+
+  // funciones usadas desde Ajustes (Seguridad)
+  function changePinFlow() { openLock('change'); }
+  function lockAppNow() { lockNow(); }
+
   // aviso del navegador: al abrir (una vez por día) y cada hora
   setTimeout(maybeNotify, 1800);
   setInterval(maybeNotify, 60 * 60 * 1000);
@@ -1599,7 +1881,16 @@
     });
   }
 
-  render();
+  // ===== Arranque: bloqueo antes de mostrar la app =====
+  if (!cryptoOk) {
+    // Sin WebCrypto (p. ej. abierto como archivo sin https): corre sin bloqueo
+    appEl.hidden = false;
+    render();
+  } else if (!hasLock()) {
+    openLock('create');
+  } else {
+    openLock('unlock');
+  }
 
   // expuesto para fases siguientes
   window.JGM = {

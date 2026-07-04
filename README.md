@@ -30,6 +30,16 @@ También funciona abriendo `index.html` directamente en el navegador.
 - [x] **Fase 6 — Ajustes + respaldo:** categorías, aviso global, exportar/importar JSON, restablecer/borrar todo.
 - [x] **Fase 7 — Pulido + PWA:** manifest + service worker offline, icono con el logo, notificaciones vía service worker (Android), revisión visual fina.
 
+## Seguridad
+
+- **PIN de acceso**: al abrir la app se pide un PIN (4-8 números). Se guarda solo un *hash* con PBKDF2-SHA256 (150.000 iteraciones); el PIN nunca se guarda en texto. Bloqueo automático tras 3 minutos sin uso y en cada recarga. Tras 5 intentos fallidos, espera de 30 s.
+- **Respaldo cifrado**: el archivo de respaldo se exporta cifrado con AES-GCM (clave derivada del PIN). Sin el PIN, el archivo es ilegible. Se importa con el mismo PIN.
+- **Registro de dispositivos (máx. 4)**: cada dispositivo se registra al desbloquear; se gestionan desde Ajustes → Seguridad (ver y quitar). Como no hay servidor, el control real es el PIN: solo quien lo conoce puede abrir la app.
+- **Endurecido**: Content-Security-Policy estricta (scripts solo propios, sin `eval`), `referrer` desactivado, y todo el contenido de usuario escapado.
+- **Olvidé mi PIN**: reinicia la app borrando datos y PIN (recuperable desde un respaldo). No hay puerta trasera.
+
+> Nota honesta: ninguna app web puede bloquear virus del teléfono (eso lo hace Android/Play Protect). Estas medidas protegen tus **datos** ante accesos no autorizados y respaldos filtrados.
+
 ## Instalar en el celular (PWA)
 
 La app es instalable y funciona sin conexión. Serví los archivos por HTTPS (GitHub Pages sirve) y desde el celular:
