@@ -250,6 +250,7 @@
     var vw = state.viewer;
     if (vw && vw.kind === kind && vw.id === id) {
       state.viewer = rest.length ? { kind: kind, id: id, idx: Math.min(vw.idx, rest.length - 1) } : null;
+      if (!state.viewer) histConsume();
     }
     mutate(function (d) {
       var o = kind === 'client' ? d.clients.find(function (x) { return x.id === id; }) : d.jobs.find(function (x) { return x.id === id; });
@@ -302,6 +303,31 @@
     };
   }
 
+  // ===== Historial (botón "atrás" de Android) =====
+  // Empujamos un estado por cada nivel de profundidad (vista) y por cada
+  // overlay (modal/visor). "Atrás" cierra lo de más arriba en vez de salir.
+  var histDepth = 0;   // estados nuestros vivos en el historial
+  var histIgnore = 0;  // popstates que debemos ignorar (los generamos nosotros)
+  var curViewDepth = 0; // inicio=0 · clientes/cobros/ajustes=1 · cliente=2
+  function histPush() {
+    try { history.pushState({ jgm: true }, ''); histDepth++; } catch (e) {}
+  }
+  function histConsume(n) {
+    n = n || 1;
+    n = Math.min(n, histDepth);
+    if (n <= 0) return;
+    histIgnore += n;
+    histDepth -= n;
+    try { history.go(-n); } catch (e) { histIgnore -= n; }
+  }
+  function viewDepthOf(v) { return v === 'inicio' ? 0 : (v === 'cliente' ? 2 : 1); }
+  function syncViewHistory(target) {
+    var d = viewDepthOf(target);
+    if (d > curViewDepth) { for (var i = curViewDepth; i < d; i++) histPush(); }
+    else if (d < curViewDepth) { histConsume(curViewDepth - d); }
+    curViewDepth = d;
+  }
+
   // ===== Toast =====
   var toastEl = document.getElementById('toast');
   var toastTimer = null;
@@ -329,12 +355,14 @@
   // ===== Navegación =====
   function go(view) {
     if (view !== 'ajustes') ajustesMsg = '';
+    syncViewHistory(view);
     state.view = view;
     state.confirmKey = null;
     render();
     window.scrollTo(0, 0);
   }
   function goClient(id) {
+    syncViewHistory('cliente');
     state.view = 'cliente';
     state.clientId = id;
     state.expandedJobId = null;
@@ -357,10 +385,11 @@
     var err = document.getElementById('cf-err');
     err.hidden = true;
     err.textContent = '';
+    if (modalEl.hidden) histPush();
     modalEl.hidden = false;
     document.getElementById('cf-name').focus();
   }
-  function closeClientModal() { modalEl.hidden = true; }
+  function closeClientModal() { if (!modalEl.hidden) { modalEl.hidden = true; histConsume(); } }
   function submitClient() {
     var name = document.getElementById('cf-name').value.trim();
     if (!name) {
@@ -468,6 +497,7 @@
     document.getElementById('jf-down-wrap').style.display = jForm.id ? 'none' : '';
     document.getElementById('jf-due-new').value = jForm.dueNew;
     renderJobModalDynamic();
+    if (jobModalEl.hidden) histPush();
     jobModalEl.hidden = false;
   }
   function renderJobModalDynamic() {
@@ -514,7 +544,7 @@
     }
     document.getElementById('jf-saldo-preview').textContent = fmtG(Math.max(0, price - minus));
   }
-  function closeJobModal() { jobModalEl.hidden = true; }
+  function closeJobModal() { if (!jobModalEl.hidden) { jobModalEl.hidden = true; histConsume(); } }
   function submitJob() {
     var errEl = document.getElementById('jf-err');
     var showErr = function (m) { errEl.textContent = m; errEl.hidden = false; };
@@ -581,9 +611,37 @@
     var err = document.getElementById('pf-err');
     err.hidden = true;
     err.textContent = '';
+    document.getElementById('pf-job-wrap').hidden = true;
     updatePayPreview();
+    if (payModalEl.hidden) histPush();
     payModalEl.hidden = false;
     document.getElementById('pf-amount').focus();
+  }
+  // Registrar pago desde la ficha del cliente, sin esperar fechas de cobro:
+  // si tiene un solo trabajo con saldo va directo; si tiene varios, muestra
+  // un selector adentro del mismo modal.
+  function openPayForClient(cid) {
+    var withDebt = jobsOf(cid).filter(function (j) { return j.credit && jobBalance(j) > 0; });
+    if (!withDebt.length) { toast('Este cliente está al día — no tiene saldos pendientes.'); return; }
+    var firstPend = function (j) {
+      var p = (j.dueDates || []).filter(function (x) { return !x.done; })
+        .map(function (x) { return x.date; }).sort();
+      return p.length ? p[0] : '9999-12-31';
+    };
+    withDebt.sort(function (a, b) {
+      var fa = firstPend(a), fb = firstPend(b);
+      if (fa !== fb) return fa < fb ? -1 : 1;
+      return a.date < b.date ? -1 : 1;
+    });
+    openPay(withDebt[0].id);
+    if (withDebt.length > 1) {
+      var sel = document.getElementById('pf-job');
+      sel.innerHTML = withDebt.map(function (j) {
+        return '<option value="' + esc(j.id) + '">' + esc((j.desc || j.category) + ' · saldo ' + fmtG(jobBalance(j))) + '</option>';
+      }).join('');
+      sel.value = withDebt[0].id;
+      document.getElementById('pf-job-wrap').hidden = false;
+    }
   }
   function updatePayPreview() {
     var j = state.data.jobs.find(function (x) { return x.id === pForm.jobId; });
@@ -597,7 +655,7 @@
     if (amount > 0 && otherPaid + amount >= price) txt += ' — ¡queda pagado!';
     document.getElementById('pf-new').textContent = txt;
   }
-  function closePayModal() { payModalEl.hidden = true; }
+  function closePayModal() { if (!payModalEl.hidden) { payModalEl.hidden = true; histConsume(); } }
   function submitPay() {
     var amount = parseMoney(document.getElementById('pf-amount').value);
     if (amount <= 0) {
@@ -657,9 +715,10 @@
     var err = document.getElementById('pp-err');
     err.hidden = true;
     err.textContent = '';
+    if (postModalEl.hidden) histPush();
     postModalEl.hidden = false;
   }
-  function closePostModal() { postModalEl.hidden = true; }
+  function closePostModal() { if (!postModalEl.hidden) { postModalEl.hidden = true; histConsume(); } }
   function submitPost() {
     var v = document.getElementById('pp-date').value;
     if (!v) {
@@ -1014,6 +1073,9 @@
       esc(bal > 0 ? fmtG(bal) : 'Al día ✓') + '</span></div>';
 
     html += '<button type="button" class="btn-big-primary js-client-new-job">+ Nuevo trabajo para este cliente</button>';
+    if (bal > 0) {
+      html += '<button type="button" class="btn-big-pay js-client-pay">+ Registrar pago</button>';
+    }
 
     if (js.length) {
       html += js.map(jobCardHtml).join('');
@@ -1049,6 +1111,8 @@
     box.querySelector('.js-client-new-job').addEventListener('click', function () {
       openNewJob(c.id);
     });
+    var clientPayBtn = box.querySelector('.js-client-pay');
+    if (clientPayBtn) clientPayBtn.addEventListener('click', function () { openPayForClient(c.id); });
     box.querySelectorAll('[data-toggle-job]').forEach(function (el) {
       el.addEventListener('click', function () {
         var id = el.getAttribute('data-toggle-job');
@@ -1075,6 +1139,7 @@
         var kind = parts[0], id = parts[1], idx = Number(parts[2]);
         var owner = photoOwner(kind, id);
         if (owner) loadPhotos(owner.photos);
+        if (!state.viewer) histPush();
         state.viewer = { kind: kind, id: id, idx: idx };
         render();
       });
@@ -1311,7 +1376,8 @@
         return '<div class="fut-card"><div class="fut-main">' +
           '<div class="fut-name" data-alert-open="' + esc(a.j.clientId) + '">' + esc(c ? c.name : '(cliente eliminado)') + '</div>' +
           '<div class="fut-sub">' + esc((a.j.desc || a.j.category) + ' · ' + alertDateLabel(a)) + '</div></div>' +
-          '<span class="fut-saldo">' + esc(fmtG(a.bal)) + '</span></div>';
+          '<div class="fut-right"><span class="fut-saldo">' + esc(fmtG(a.bal)) + '</span>' +
+          '<button type="button" class="fut-pay" data-alert-pay="' + esc(a.j.id) + '">Cobrar</button></div></div>';
       }).join('');
     }
 
@@ -1322,6 +1388,7 @@
         return '<div class="sinfecha-card"><div class="sinfecha-main">' +
           '<div class="fut-name" data-alert-open="' + esc(j.clientId) + '">' + esc(c ? c.name : '—') + '</div>' +
           '<div class="fut-sub">' + esc((j.desc || j.category) + ' · debe ' + fmtG(jobBalance(j))) + '</div></div>' +
+          '<button type="button" class="fut-pay" data-alert-pay="' + esc(j.id) + '">Cobrar</button>' +
           '<button type="button" class="btn-fijar" data-sin-post="' + esc(j.id) + '">Fijar fecha</button></div>';
       }).join('');
     }
@@ -1745,6 +1812,16 @@
     document.getElementById('pf-amount').value = dots(Math.round(jobBalance(j) / 2));
     updatePayPreview();
   });
+  // selector de trabajo (pago desde la ficha con varios trabajos con saldo)
+  document.getElementById('pf-job').addEventListener('change', function (e) {
+    var j = state.data.jobs.find(function (x) { return x.id === e.target.value; });
+    if (!j) return;
+    pForm.jobId = j.id;
+    var c = state.data.clients.find(function (x) { return x.id === j.clientId; });
+    document.getElementById('pf-sub').textContent = (c ? c.name : '') + ' — ' + (j.desc || j.category);
+    document.getElementById('pf-saldo').textContent = fmtG(jobBalance(j));
+    updatePayPreview();
+  });
 
   // limpiar errores apenas se corrige el dato
   function clearErrOnInput(inputIds, errId) {
@@ -1804,7 +1881,7 @@
   });
 
   // visor de fotos
-  function closeViewer() { state.viewer = null; state.confirmKey = null; render(); }
+  function closeViewer() { if (state.viewer) { state.viewer = null; histConsume(); } state.confirmKey = null; render(); }
   viewerEl.addEventListener('click', function (e) { if (e.target === viewerEl) closeViewer(); });
   document.getElementById('vw-close').addEventListener('click', closeViewer);
   document.getElementById('vw-stage').addEventListener('click', function (e) { e.stopPropagation(); });
@@ -2068,6 +2145,37 @@
   // funciones usadas desde Ajustes (Seguridad)
   function changePinFlow() { openLock('change'); }
   function lockAppNow() { lockNow(); }
+
+  // ===== Botón "atrás" (Android): cierra overlays o retrocede de pantalla =====
+  window.addEventListener('popstate', function () {
+    if (histIgnore > 0) { histIgnore--; return; }
+    if (histDepth > 0) histDepth--;
+    // con la app bloqueada no navegamos nada
+    if (!lockEl.hidden) return;
+    // 1) visor de fotos abierto
+    if (!viewerEl.hidden) { state.viewer = null; state.confirmKey = null; render(); return; }
+    // 2) algún modal abierto
+    if (!modalEl.hidden) { modalEl.hidden = true; return; }
+    if (!jobModalEl.hidden) { jobModalEl.hidden = true; return; }
+    if (!payModalEl.hidden) { payModalEl.hidden = true; return; }
+    if (!postModalEl.hidden) { postModalEl.hidden = true; return; }
+    // 3) retroceso de pantalla: ficha -> clientes -> inicio
+    if (state.view === 'cliente') {
+      curViewDepth = 1;
+      state.view = 'clientes';
+      state.confirmKey = null;
+      render();
+      window.scrollTo(0, 0);
+      return;
+    }
+    if (state.view !== 'inicio') {
+      curViewDepth = 0;
+      state.view = 'inicio';
+      state.confirmKey = null;
+      render();
+      window.scrollTo(0, 0);
+    }
+  });
 
   // aviso del navegador: al abrir (una vez por día) y cada hora
   setTimeout(maybeNotify, 1800);

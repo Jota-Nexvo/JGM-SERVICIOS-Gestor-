@@ -527,6 +527,20 @@ button, input, textarea, select { font-family: inherit; }
 }
 .btn-big-primary:hover { background: #234AAE; }
 
+.btn-big-pay {
+  background: #1F8A5B;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(31,138,91,0.3);
+  width: 100%;
+}
+.btn-big-pay:hover { background: #17694A; }
+
 /* ===== Tarjetas de trabajo (ficha) ===== */
 .job-card {
   background: #FFFFFF;
@@ -1056,6 +1070,18 @@ button, input, textarea, select { font-family: inherit; }
 .fut-name { font-size: 14px; font-weight: 700; color: #232A56; cursor: pointer; }
 .fut-sub { font-size: 12px; color: #6B7690; }
 .fut-saldo { font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; font-weight: 600; color: #232A56; white-space: nowrap; }
+.fut-right { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; flex-shrink: 0; }
+.fut-pay {
+  background: #1F8A5B;
+  color: #fff;
+  border: none;
+  border-radius: 9px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.fut-pay:hover { background: #17694A; }
 
 .sinfecha-card {
   background: #FFFFFF;
