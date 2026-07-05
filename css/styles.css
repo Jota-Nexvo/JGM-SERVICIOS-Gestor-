@@ -1003,6 +1003,73 @@ button, input, textarea, select { font-family: inherit; }
 }
 .panel-empty { font-size: 13px; color: #6B7690; padding: 6px 0; }
 
+/* ===== Registro mensual de ingresos ===== */
+.reg-open {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F4;
+  border-radius: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  color: #232A56;
+}
+.reg-open:hover { background: #F3F6FC; }
+.reg-open-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.reg-open-title { font-size: 14px; font-weight: 700; }
+.reg-open-sub { font-size: 11.5px; color: #6B7690; margin-top: 2px; }
+.reg-open svg { color: #8A97B0; flex-shrink: 0; }
+
+.reg-total {
+  background: #232A56;
+  border-radius: 14px;
+  padding: 14px 18px;
+  color: #fff;
+}
+.reg-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  padding: 3px 0;
+}
+.reg-total-row span:first-child { color: #B8C0E4; }
+.reg-total-row .mono { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 16px; color: #fff; }
+.reg-total-row .mono.blue { color: #9FC0FF; }
+
+.reg-hint { font-size: 12px; color: #6B7690; line-height: 1.4; margin: 0 2px; }
+
+.reg-year {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 2px -6px;
+}
+.reg-year-lbl { font-size: 13px; font-weight: 700; color: #232A56; }
+.reg-year-nums { font-size: 11px; color: #8A94C4; font-family: 'IBM Plex Mono', monospace; text-align: right; }
+
+.reg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F4;
+  border-radius: 12px;
+  padding: 12px 15px;
+}
+.reg-mes { font-size: 14px; font-weight: 600; color: #232A56; min-width: 0; }
+.reg-nums { display: flex; gap: 18px; flex-shrink: 0; }
+.reg-num { display: flex; flex-direction: column; align-items: flex-end; }
+.reg-cap { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #8A94C4; }
+.reg-val { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 13.5px; color: #232A56; margin-top: 2px; }
+.reg-val.blue { color: #2B57C8; }
+
 @media (min-width: 880px) {
   .stat-grid { grid-template-columns: 1.4fr 1fr 1fr 1.4fr; }
   .stat-tot, .stat-mes { grid-column: auto; }

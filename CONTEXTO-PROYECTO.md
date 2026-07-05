@@ -6,9 +6,10 @@
 > algo importante. Si alguna vez perdés el chat, **este archivo es la memoria del
 > proyecto.**
 >
-> **Última actualización:** 2026-07-05 — PIN de 6 a 10 dígitos y bloqueo
-> escalonado persistente por intentos fallidos; se documentó la charla sobre
-> seguridad/dominio/tokens (ver sección 10).
+> **Última actualización:** 2026-07-05 — (1) PIN de 6 a 10 dígitos y bloqueo
+> escalonado persistente por intentos fallidos; charla sobre
+> seguridad/dominio/tokens documentada (sección 10). (2) Nueva pantalla
+> **Registro mensual de ingresos** (facturado vs. cobrado mes por mes).
 
 ## 1. Qué es
 
@@ -126,6 +127,18 @@ Fases del plan original (todas hechas):
   `history.pushState`/`popstate` para que el gesto/botón de atrás del
   celular cierre modales y el visor de fotos, y retroceda entre pantallas
   (ficha → Clientes → Inicio) en vez de cerrar la app de golpe.
+- **Registro mensual de ingresos** (agregado 2026-07-05): pantalla propia
+  `screen-registro` (vista `registro`, se entra desde un botón en Inicio,
+  debajo de la tarjeta del mes; se vuelve con "Volver" o el botón atrás).
+  Muestra, mes por mes (agrupado por año con subtotal anual y un total
+  general arriba): **Facturado** (precio de los trabajos con fecha de ese
+  mes, contado o crédito) y **Cobrado** (contado → precio en el mes del
+  trabajo; crédito → cada pago en el mes de la fecha del pago = flujo de
+  caja real). **No usa datos nuevos**: todo se calcula al vuelo desde
+  `jobs`/`payments`. Funciones: `monthlyStats()`, `monthName()`,
+  `renderRegistro()` (en `js/app.js`, junto a `renderInicio`). La fila del
+  mes actual coincide con la tarjeta "Realizado/Cobrado" de Inicio (misma
+  lógica). Es, de hecho, la **mitad de ingresos** de la futura Fase 8.
 
 ## 5. Modelo de datos
 
@@ -206,6 +219,10 @@ próxima sesión):
    contabilidad de partida doble (sería sobre-ingeniería para una empresa
    unipersonal). Integrar en la misma app (reutiliza seguridad, respaldo y
    los datos de ingresos que ya existen), no como app separada.
+   **NOTA (2026-07-05):** la parte de **ingresos** ya está hecha (ver la
+   pantalla "Registro mensual de ingresos" en la sección 4). Para la Fase 8
+   faltaría el módulo de Gastos y restarlos al Cobrado — el registro mensual
+   ya da la estructura por mes/año para colgarle los gastos.
 
 ## 8. Cómo instalar (cuando el dueño lo autorice)
 

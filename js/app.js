@@ -299,6 +299,7 @@
       clientes: ['Clientes', D.clients.length + ' registrados · ' + debtClientsCount() + ' con deuda'],
       cliente: ['Cliente', ''],
       cobros: ['Cobros', 'Avisos de cobro y pendientes'],
+      registro: ['Registro mensual', 'Ingresos mes por mes'],
       ajustes: ['Ajustes', 'Configuración y respaldo']
     };
   }
@@ -1260,6 +1261,12 @@
       '<div class="mes-bar"><div class="cob" style="width:' + mesPct + '%;"></div></div></div>' +
       '</div>';
 
+    // acceso al registro mensual de ingresos
+    html += '<button type="button" class="reg-open" data-go="registro">' +
+      '<span class="reg-open-main"><span class="reg-open-title">Registro mensual de ingresos</span>' +
+      '<span class="reg-open-sub">Facturado y cobrado, mes por mes</span></span>' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>';
+
     // mayores deudores
     var deudores = D.clients
       .map(function (c) { return { c: c, bal: bal[c.id] || 0 }; })
@@ -1313,6 +1320,82 @@
     });
     var backupBtn = box.querySelector('.js-backup-now');
     if (backupBtn) backupBtn.addEventListener('click', doCloudBackup);
+  }
+
+  // ===== Registro mensual de ingresos =====
+  // Se calcula al vuelo desde trabajos y pagos existentes (sin datos nuevos):
+  //  - Facturado: precio del trabajo, en el mes de su fecha (contado o crédito).
+  //  - Cobrado: contado -> precio en el mes del trabajo; crédito -> cada pago
+  //    en el mes de la fecha del pago. Refleja el flujo de caja real por mes.
+  function monthName(ym) {
+    var s = MESES[Number(ym.slice(5, 7)) - 1] || '';
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  function monthlyStats() {
+    var map = {};
+    function bkt(ym) { if (!map[ym]) map[ym] = { facturado: 0, cobrado: 0 }; return map[ym]; }
+    (state.data.jobs || []).forEach(function (j) {
+      var jm = (j.date || '').slice(0, 7);
+      var price = Number(j.price) || 0;
+      if (jm) bkt(jm).facturado += price;
+      if (j.credit) {
+        (j.payments || []).forEach(function (p) {
+          var pm = (p.date || '').slice(0, 7);
+          if (pm) bkt(pm).cobrado += Number(p.amount) || 0;
+        });
+      } else if (jm) {
+        bkt(jm).cobrado += price;
+      }
+    });
+    return Object.keys(map).sort().reverse().map(function (ym) {
+      return { ym: ym, mes: monthName(ym), anio: ym.slice(0, 4), facturado: map[ym].facturado, cobrado: map[ym].cobrado };
+    });
+  }
+
+  function renderRegistro() {
+    var box = document.getElementById('registro-content');
+    var rows = monthlyStats();
+    var html = '<div class="detail-header">' +
+      '<button type="button" class="btn-white js-back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Volver</button>' +
+      '<div class="spacer"></div></div>';
+
+    if (!rows.length) {
+      html += '<div class="panel"><div class="panel-empty">Todavía no hay ingresos cargados. Cuando registres trabajos, vas a ver acá el resumen mes por mes.</div></div>';
+      box.innerHTML = html;
+      box.querySelector('.js-back').addEventListener('click', function () { go('inicio'); });
+      return;
+    }
+
+    // totales generales (todo el historial)
+    var totF = 0, totC = 0;
+    rows.forEach(function (r) { totF += r.facturado; totC += r.cobrado; });
+    html += '<div class="reg-total"><div class="reg-total-row"><span>Facturado (total)</span>' +
+      '<span class="mono">' + esc(fmtG(totF)) + '</span></div>' +
+      '<div class="reg-total-row"><span>Cobrado (total)</span>' +
+      '<span class="mono blue">' + esc(fmtG(totC)) + '</span></div></div>';
+
+    html += '<div class="reg-hint">Facturado = trabajos hechos ese mes. Cobrado = plata que entró ese mes.</div>';
+
+    // meses agrupados por año, con subtotal anual
+    var lastYear = null;
+    rows.forEach(function (r) {
+      if (r.anio !== lastYear) {
+        var yF = 0, yC = 0;
+        rows.forEach(function (x) { if (x.anio === r.anio) { yF += x.facturado; yC += x.cobrado; } });
+        html += '<div class="reg-year"><span class="reg-year-lbl">' + esc(r.anio) + '</span>' +
+          '<span class="reg-year-nums">Fact. ' + esc(fmtG(yF)) + ' · Cob. ' + esc(fmtG(yC)) + '</span></div>';
+        lastYear = r.anio;
+      }
+      html += '<div class="reg-row">' +
+        '<div class="reg-mes">' + esc(r.mes) + '</div>' +
+        '<div class="reg-nums">' +
+          '<div class="reg-num"><span class="reg-cap">Facturado</span><span class="reg-val mono">' + esc(fmtG(r.facturado)) + '</span></div>' +
+          '<div class="reg-num"><span class="reg-cap">Cobrado</span><span class="reg-val mono blue">' + esc(fmtG(r.cobrado)) + '</span></div>' +
+        '</div></div>';
+    });
+
+    box.innerHTML = html;
+    box.querySelector('.js-back').addEventListener('click', function () { go('inicio'); });
   }
 
   // ===== Render: Cobros =====
@@ -1709,8 +1792,8 @@
       s.classList.toggle('active', s.id === 'screen-' + view);
     });
 
-    // nav activa: Clientes queda resaltado también en la ficha
-    var navView = view === 'cliente' ? 'clientes' : view;
+    // nav activa: Clientes queda resaltado en la ficha; Inicio en el registro
+    var navView = view === 'cliente' ? 'clientes' : (view === 'registro' ? 'inicio' : view);
     document.querySelectorAll('[data-nav]').forEach(function (el) {
       if (el.classList.contains('nav-item') || el.classList.contains('tab-item')) {
         el.classList.toggle('active', el.getAttribute('data-nav') === navView);
@@ -1746,6 +1829,7 @@
     if (view === 'clientes') renderClientesList();
     if (view === 'cliente') renderCliente();
     if (view === 'cobros') renderCobros();
+    if (view === 'registro') renderRegistro();
     if (view === 'ajustes') renderAjustes();
 
     // visor de fotos (overlay, independiente de la pantalla)
