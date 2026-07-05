@@ -1615,7 +1615,7 @@
       var devs = devices();
       var myId = deviceId();
       html += '<div class="set-card"><div class="set-title">Seguridad</div>' +
-        '<div class="set-desc">La app se abre con tu PIN y se bloquea sola tras unos minutos sin usarla. El respaldo se exporta cifrado.</div>' +
+        '<div class="set-desc">La app se abre con tu PIN (de 6 a 10 números) y se bloquea sola tras unos minutos sin usarla. Tras varios PIN equivocados se bloquea un rato (y cada vez más), para frenar a quien intente adivinarlo. El respaldo se exporta cifrado.</div>' +
         '<div class="set-btn-row" style="margin-bottom:12px;"><button type="button" class="set-btn-primary js-change-pin">Cambiar PIN</button>' +
         '<button type="button" class="set-btn-ghost js-lock-now">Bloquear ahora</button></div>' +
         '<div class="set-desc tight">Dispositivos autorizados · ' + devs.length + ' / 4</div><div class="dev-list">';
@@ -1915,14 +1915,38 @@
   // ===== Seguridad: PIN de acceso, bloqueo y dispositivos ==============
   // =====================================================================
   var LOCK_KEY = 'jgm_lock_v1';
+  var ATT_KEY = 'jgm_lock_att_v1';
   var DEVID_KEY = 'jgm_device_id';
   var PBKDF2_ITER = 150000;
   var cryptoOk = !!(window.crypto && crypto.subtle && crypto.getRandomValues);
   var unlocked = false;
   var sessionPin = null;
   var lockMode = 'unlock';
-  var failCount = 0;
-  var blockUntil = 0;
+
+  // --- (A) control de intentos fallidos: persistente y con espera creciente ---
+  // Se guarda en localStorage para que cerrar/reabrir la app NO reinicie el contador.
+  function loadAtt() {
+    try { return JSON.parse(localStorage.getItem(ATT_KEY)) || { fails: 0, until: 0 }; }
+    catch (e) { return { fails: 0, until: 0 }; }
+  }
+  function saveAtt(a) { try { localStorage.setItem(ATT_KEY, JSON.stringify(a)); } catch (e) {} }
+  function clearAtt() { try { localStorage.removeItem(ATT_KEY); } catch (e) {} }
+  // segundos de bloqueo según cuántas veces se erró el PIN (escala hacia arriba)
+  function lockSecsFor(fails) {
+    if (fails < 5) return 0;
+    if (fails === 5) return 30;       // 30 s
+    if (fails === 6) return 60;       // 1 min
+    if (fails === 7) return 5 * 60;   // 5 min
+    if (fails === 8) return 15 * 60;  // 15 min
+    if (fails === 9) return 30 * 60;  // 30 min
+    return 60 * 60;                   // 1 h (10 o más)
+  }
+  function fmtWait(ms) {
+    var s = Math.ceil(ms / 1000);
+    if (s < 60) return s + (s === 1 ? ' segundo' : ' segundos');
+    var m = Math.ceil(s / 60);
+    return m + (m === 1 ? ' minuto' : ' minutos');
+  }
 
   // --- utilidades cripto ---
   function ab2b64(buf) {
@@ -2022,15 +2046,36 @@
   var appEl = document.querySelector('.app');
 
   function lockErr(msg) { lkErr.textContent = msg; lkErr.hidden = !msg; }
+
+  // --- (A) cuenta regresiva viva mientras dura el bloqueo por intentos ---
+  var cdT = null;
+  function stopCountdown() { clearTimeout(cdT); cdT = null; }
+  function tickCountdown() {
+    var att = loadAtt();
+    var rem = att.until - Date.now();
+    if (rem <= 0) {
+      stopCountdown();
+      lkIn1.disabled = false; lkGo.disabled = false;
+      lockErr('');
+      try { lkIn1.focus(); } catch (e) {}
+      return;
+    }
+    lkIn1.disabled = true; lkGo.disabled = true;
+    lockErr('Demasiados intentos. Esperá ' + fmtWait(rem) + ' e intentá de nuevo.');
+    cdT = setTimeout(tickCountdown, 500);
+  }
+
   function openLock(mode) {
     lockMode = mode;
+    stopCountdown();
     lkIn1.value = ''; lkIn2.value = '';
     lockErr('');
+    lkIn1.disabled = false;
     lkDevices.hidden = true; lkDevices.innerHTML = '';
     lkIn1.hidden = false; lkGo.hidden = false; lkGo.disabled = false;
     if (mode === 'create' || mode === 'change') {
       lkTitle.textContent = mode === 'change' ? 'Nuevo PIN' : 'Creá tu PIN';
-      lkSub.textContent = 'Elegí un PIN de 4 a 8 números para proteger tus datos.';
+      lkSub.textContent = 'Elegí un PIN de 6 a 10 números para proteger tus datos.';
       lkIn1.placeholder = 'PIN nuevo'; lkIn2.hidden = false; lkForgot.hidden = true;
       lkGo.textContent = 'Guardar PIN';
     } else if (mode === 'unlock') {
@@ -2041,6 +2086,11 @@
     }
     appEl.hidden = true;
     lockEl.hidden = false;
+    // si quedó un bloqueo pendiente de intentos previos, retomar la cuenta regresiva
+    if (mode === 'unlock') {
+      var att = loadAtt();
+      if (att.until && att.until > Date.now()) { tickCountdown(); return; }
+    }
     setTimeout(function () { lkIn1.focus(); }, 50);
   }
   function showDeviceLimit(pin) {
@@ -2089,7 +2139,7 @@
     var v1 = (lkIn1.value || '').trim();
     if (lockMode === 'create' || lockMode === 'change') {
       var v2 = (lkIn2.value || '').trim();
-      if (!/^\d{4,8}$/.test(v1)) { lockErr('El PIN debe tener de 4 a 8 números.'); return; }
+      if (!/^\d{6,10}$/.test(v1)) { lockErr('El PIN debe tener de 6 a 10 números.'); return; }
       if (v1 !== v2) { lockErr('Los PIN no coinciden.'); return; }
       setPin(v1).then(function () {
         if (lockMode === 'change') {
@@ -2105,18 +2155,23 @@
       return;
     }
     // unlock
-    if (Date.now() < blockUntil) { lockErr('Demasiados intentos. Esperá un momento.'); return; }
+    var att = loadAtt();
+    if (att.until && att.until > Date.now()) { tickCountdown(); return; }
     if (!v1) { lockErr('Ingresá tu PIN.'); return; }
     lkGo.disabled = true;
     verifyPin(v1).then(function (ok) {
       lkGo.disabled = false;
-      if (ok) { failCount = 0; enterApp(v1); }
-      else {
-        failCount++;
-        if (failCount >= 5) { blockUntil = Date.now() + 30000; lockErr('Demasiados intentos. Esperá 30 segundos.'); }
-        else lockErr('PIN incorrecto.');
-        lkIn1.value = '';
-      }
+      if (ok) { clearAtt(); stopCountdown(); enterApp(v1); return; }
+      // fallo: registra el intento y aplica espera creciente (persistente)
+      var a = loadAtt();
+      a.fails = (a.fails || 0) + 1;
+      var secs = lockSecsFor(a.fails);
+      if (secs) a.until = Date.now() + secs * 1000;
+      saveAtt(a);
+      lkIn1.value = '';
+      if (secs) { tickCountdown(); return; }
+      var left = 5 - a.fails;
+      lockErr('PIN incorrecto.' + (left <= 2 ? ' Te queda' + (left === 1 ? '' : 'n') + ' ' + left + ' intento' + (left === 1 ? '' : 's') + ' antes del bloqueo.' : ''));
     });
   }
   lkGo.addEventListener('click', handleLockGo);
@@ -2127,6 +2182,7 @@
     if (lkForgot._armed) {
       // borra todo (PIN + datos + fotos) — recuperable desde un respaldo
       localStorage.removeItem(LOCK_KEY);
+      clearAtt();
       var fresh = { clients: [], jobs: [], settings: { categories: ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro'], remindDays: 3, notifEnabled: false, devices: [] }, demo: false };
       persist(fresh); state.data = fresh; state.photoCache = {}; _pp = {};
       idbClear().catch(function () {});
