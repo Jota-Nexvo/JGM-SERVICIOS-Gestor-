@@ -9,7 +9,9 @@
 > **Última actualización:** 2026-07-05 — (1) PIN de 6 a 10 dígitos y bloqueo
 > escalonado persistente por intentos fallidos; charla sobre
 > seguridad/dominio/tokens documentada (sección 10). (2) Nueva pantalla
-> **Registro mensual de ingresos** (facturado vs. cobrado mes por mes).
+> **Registro mensual de ingresos** (facturado vs. cobrado mes por mes) con
+> **detalle por mes** (tocás un mes y ves la lista de trabajos facturados y
+> de cobros, cada uno con cliente, concepto y fecha).
 
 ## 1. Qué es
 
@@ -139,6 +141,15 @@ Fases del plan original (todas hechas):
   `renderRegistro()` (en `js/app.js`, junto a `renderInicio`). La fila del
   mes actual coincide con la tarjeta "Realizado/Cobrado" de Inicio (misma
   lógica). Es, de hecho, la **mitad de ingresos** de la futura Fase 8.
+  - **Detalle por mes** (`screen-regmes`, vista `regmes`, profundidad 2 como
+    `cliente`): se entra tocando una fila de mes en el registro; vuelve a la
+    lista con "Volver" o el botón atrás (regmes → registro → inicio, ya
+    contemplado en el handler de `popstate`). Muestra dos listas: **Facturado**
+    (trabajos con fecha de ese mes: cliente, descripción, fecha, monto, chip
+    Contado/Crédito) y **Cobrado** (movimientos que entraron ese mes: seña,
+    cuota o contado, con cliente, concepto, descripción y fecha). Funciones:
+    `monthDetail(ym)`, `renderRegMonth()`; navegación `goRegMonth(ym)`; estado
+    `state.regMonth`. Las filas del detalle son informativas (no navegan).
 
 ## 5. Modelo de datos
 

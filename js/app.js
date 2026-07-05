@@ -300,6 +300,7 @@
       cliente: ['Cliente', ''],
       cobros: ['Cobros', 'Avisos de cobro y pendientes'],
       registro: ['Registro mensual', 'Ingresos mes por mes'],
+      regmes: ['Detalle del mes', state.regMonth ? (monthName(state.regMonth) + ' ' + state.regMonth.slice(0, 4)) : ''],
       ajustes: ['Ajustes', 'Configuración y respaldo']
     };
   }
@@ -321,7 +322,7 @@
     histDepth -= n;
     try { history.go(-n); } catch (e) { histIgnore -= n; }
   }
-  function viewDepthOf(v) { return v === 'inicio' ? 0 : (v === 'cliente' ? 2 : 1); }
+  function viewDepthOf(v) { return v === 'inicio' ? 0 : (v === 'cliente' || v === 'regmes' ? 2 : 1); }
   function syncViewHistory(target) {
     var d = viewDepthOf(target);
     if (d > curViewDepth) { for (var i = curViewDepth; i < d; i++) histPush(); }
@@ -367,6 +368,14 @@
     state.view = 'cliente';
     state.clientId = id;
     state.expandedJobId = null;
+    state.confirmKey = null;
+    render();
+    window.scrollTo(0, 0);
+  }
+  function goRegMonth(ym) {
+    syncViewHistory('regmes');
+    state.view = 'regmes';
+    state.regMonth = ym;
     state.confirmKey = null;
     render();
     window.scrollTo(0, 0);
@@ -1386,8 +1395,9 @@
           '<span class="reg-year-nums">Fact. ' + esc(fmtG(yF)) + ' · Cob. ' + esc(fmtG(yC)) + '</span></div>';
         lastYear = r.anio;
       }
-      html += '<div class="reg-row">' +
-        '<div class="reg-mes">' + esc(r.mes) + '</div>' +
+      html += '<div class="reg-row" data-reg-month="' + esc(r.ym) + '">' +
+        '<div class="reg-mes">' + esc(r.mes) +
+        '<svg class="reg-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>' +
         '<div class="reg-nums">' +
           '<div class="reg-num"><span class="reg-cap">Facturado</span><span class="reg-val mono">' + esc(fmtG(r.facturado)) + '</span></div>' +
           '<div class="reg-num"><span class="reg-cap">Cobrado</span><span class="reg-val mono blue">' + esc(fmtG(r.cobrado)) + '</span></div>' +
@@ -1396,6 +1406,91 @@
 
     box.innerHTML = html;
     box.querySelector('.js-back').addEventListener('click', function () { go('inicio'); });
+    box.querySelectorAll('[data-reg-month]').forEach(function (el) {
+      el.addEventListener('click', function () { goRegMonth(el.getAttribute('data-reg-month')); });
+    });
+  }
+
+  // ===== Detalle de un mes: facturación y cobros con cliente y fecha =====
+  function monthDetail(ym) {
+    var D = state.data;
+    var cById = {};
+    (D.clients || []).forEach(function (c) { cById[c.id] = c; });
+    var facturado = [], cobrado = [];
+    (D.jobs || []).forEach(function (j) {
+      var jm = (j.date || '').slice(0, 7);
+      var cname = (cById[j.clientId] || {}).name || 'Cliente eliminado';
+      var desc = j.desc || j.category || 'Trabajo';
+      if (jm === ym) {
+        facturado.push({ client: cname, desc: desc, date: j.date, amount: Number(j.price) || 0, credit: j.credit });
+      }
+      if (j.credit) {
+        (j.payments || []).forEach(function (p) {
+          if ((p.date || '').slice(0, 7) === ym) {
+            cobrado.push({ client: cname, concept: (p.note || '').trim() || 'Pago', desc: desc, date: p.date, amount: Number(p.amount) || 0 });
+          }
+        });
+      } else if (jm === ym) {
+        cobrado.push({ client: cname, concept: 'Contado', desc: desc, date: j.date, amount: Number(j.price) || 0 });
+      }
+    });
+    var byDate = function (a, b) { return (a.date || '') < (b.date || '') ? -1 : 1; };
+    facturado.sort(byDate); cobrado.sort(byDate);
+    return { facturado: facturado, cobrado: cobrado };
+  }
+
+  function renderRegMonth() {
+    var box = document.getElementById('regmes-content');
+    var ym = state.regMonth;
+    var det = monthDetail(ym);
+    var totF = det.facturado.reduce(function (a, x) { return a + x.amount; }, 0);
+    var totC = det.cobrado.reduce(function (a, x) { return a + x.amount; }, 0);
+
+    var html = '<div class="detail-header">' +
+      '<button type="button" class="btn-white js-back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Volver</button>' +
+      '<div class="spacer"></div></div>';
+
+    html += '<div class="regd-head"><div class="regd-title">' + esc(monthName(ym) + ' ' + (ym || '').slice(0, 4)) + '</div>' +
+      '<div class="regd-tots">' +
+        '<div class="regd-tot"><span class="regd-tot-cap">Facturado</span><span class="regd-tot-val mono">' + esc(fmtG(totF)) + '</span></div>' +
+        '<div class="regd-tot"><span class="regd-tot-cap">Cobrado</span><span class="regd-tot-val mono blue">' + esc(fmtG(totC)) + '</span></div>' +
+      '</div></div>';
+
+    // Facturación del mes (trabajos hechos ese mes)
+    html += '<div class="panel"><div class="panel-label">Facturado · ' + det.facturado.length +
+      (det.facturado.length === 1 ? ' trabajo' : ' trabajos') + '</div>';
+    if (det.facturado.length) {
+      html += '<div class="regd-list">' + det.facturado.map(function (x) {
+        var chip = x.credit ? 'Crédito' : 'Contado';
+        var chipCls = x.credit ? 'cred' : 'cont';
+        return '<div class="regd-row"><div class="regd-main">' +
+          '<div class="regd-name">' + esc(x.client) + '</div>' +
+          '<div class="regd-sub">' + esc(x.desc + ' · ' + ddShort(x.date)) + '</div></div>' +
+          '<div class="regd-right"><span class="regd-amt mono">' + esc(fmtG(x.amount)) + '</span>' +
+          '<span class="regd-chip ' + chipCls + '">' + chip + '</span></div></div>';
+      }).join('') + '</div>';
+    } else {
+      html += '<div class="panel-empty">No hubo trabajos facturados este mes.</div>';
+    }
+    html += '</div>';
+
+    // Cobros del mes (plata que entró ese mes)
+    html += '<div class="panel"><div class="panel-label">Cobrado · ' + det.cobrado.length +
+      (det.cobrado.length === 1 ? ' movimiento' : ' movimientos') + '</div>';
+    if (det.cobrado.length) {
+      html += '<div class="regd-list">' + det.cobrado.map(function (x) {
+        return '<div class="regd-row"><div class="regd-main">' +
+          '<div class="regd-name">' + esc(x.client) + '</div>' +
+          '<div class="regd-sub">' + esc(x.concept + ' · ' + x.desc + ' · ' + ddShort(x.date)) + '</div></div>' +
+          '<span class="regd-amt mono blue">' + esc(fmtG(x.amount)) + '</span></div>';
+      }).join('') + '</div>';
+    } else {
+      html += '<div class="panel-empty">No entró dinero este mes.</div>';
+    }
+    html += '</div>';
+
+    box.innerHTML = html;
+    box.querySelector('.js-back').addEventListener('click', function () { go('registro'); });
   }
 
   // ===== Render: Cobros =====
@@ -1793,7 +1888,7 @@
     });
 
     // nav activa: Clientes queda resaltado en la ficha; Inicio en el registro
-    var navView = view === 'cliente' ? 'clientes' : (view === 'registro' ? 'inicio' : view);
+    var navView = view === 'cliente' ? 'clientes' : (view === 'registro' || view === 'regmes' ? 'inicio' : view);
     document.querySelectorAll('[data-nav]').forEach(function (el) {
       if (el.classList.contains('nav-item') || el.classList.contains('tab-item')) {
         el.classList.toggle('active', el.getAttribute('data-nav') === navView);
@@ -1830,6 +1925,7 @@
     if (view === 'cliente') renderCliente();
     if (view === 'cobros') renderCobros();
     if (view === 'registro') renderRegistro();
+    if (view === 'regmes') renderRegMonth();
     if (view === 'ajustes') renderAjustes();
 
     // visor de fotos (overlay, independiente de la pantalla)
@@ -2303,6 +2399,15 @@
     if (state.view === 'cliente') {
       curViewDepth = 1;
       state.view = 'clientes';
+      state.confirmKey = null;
+      render();
+      window.scrollTo(0, 0);
+      return;
+    }
+    // detalle del mes -> registro
+    if (state.view === 'regmes') {
+      curViewDepth = 1;
+      state.view = 'registro';
       state.confirmKey = null;
       render();
       window.scrollTo(0, 0);
