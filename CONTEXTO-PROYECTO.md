@@ -11,7 +11,8 @@
 > seguridad/dominio/tokens documentada (sección 10). (2) Nueva pantalla
 > **Registro mensual de ingresos** (facturado vs. cobrado mes por mes) con
 > **detalle por mes** (tocás un mes y ves la lista de trabajos facturados y
-> de cobros, cada uno con cliente, concepto y fecha).
+> de cobros, cada uno con cliente, concepto y fecha; y tocando una fila se
+> abre la ficha del cliente).
 
 ## 1. Qué es
 
@@ -149,7 +150,10 @@ Fases del plan original (todas hechas):
     Contado/Crédito) y **Cobrado** (movimientos que entraron ese mes: seña,
     cuota o contado, con cliente, concepto, descripción y fecha). Funciones:
     `monthDetail(ym)`, `renderRegMonth()`; navegación `goRegMonth(ym)`; estado
-    `state.regMonth`. Las filas del detalle son informativas (no navegan).
+    `state.regMonth`. **Tocar una fila abre la ficha del cliente**
+    (`goClient`, vía `data-open-client`); las filas de clientes eliminados no
+    son tocables. Como cualquier ficha, el botón atrás desde ahí vuelve a
+    Clientes (comportamiento consistente y balanceado en el historial).
 
 ## 5. Modelo de datos
 

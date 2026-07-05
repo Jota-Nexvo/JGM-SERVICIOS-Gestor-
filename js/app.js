@@ -1421,17 +1421,18 @@
       var jm = (j.date || '').slice(0, 7);
       var cname = (cById[j.clientId] || {}).name || 'Cliente eliminado';
       var desc = j.desc || j.category || 'Trabajo';
+      var exists = !!cById[j.clientId];
       if (jm === ym) {
-        facturado.push({ client: cname, desc: desc, date: j.date, amount: Number(j.price) || 0, credit: j.credit });
+        facturado.push({ client: cname, clientId: exists ? j.clientId : '', desc: desc, date: j.date, amount: Number(j.price) || 0, credit: j.credit });
       }
       if (j.credit) {
         (j.payments || []).forEach(function (p) {
           if ((p.date || '').slice(0, 7) === ym) {
-            cobrado.push({ client: cname, concept: (p.note || '').trim() || 'Pago', desc: desc, date: p.date, amount: Number(p.amount) || 0 });
+            cobrado.push({ client: cname, clientId: exists ? j.clientId : '', concept: (p.note || '').trim() || 'Pago', desc: desc, date: p.date, amount: Number(p.amount) || 0 });
           }
         });
       } else if (jm === ym) {
-        cobrado.push({ client: cname, concept: 'Contado', desc: desc, date: j.date, amount: Number(j.price) || 0 });
+        cobrado.push({ client: cname, clientId: exists ? j.clientId : '', concept: 'Contado', desc: desc, date: j.date, amount: Number(j.price) || 0 });
       }
     });
     var byDate = function (a, b) { return (a.date || '') < (b.date || '') ? -1 : 1; };
@@ -1463,7 +1464,8 @@
       html += '<div class="regd-list">' + det.facturado.map(function (x) {
         var chip = x.credit ? 'Crédito' : 'Contado';
         var chipCls = x.credit ? 'cred' : 'cont';
-        return '<div class="regd-row"><div class="regd-main">' +
+        var tap = x.clientId ? ' tap" data-open-client="' + esc(x.clientId) + '"' : '"';
+        return '<div class="regd-row' + tap + '><div class="regd-main">' +
           '<div class="regd-name">' + esc(x.client) + '</div>' +
           '<div class="regd-sub">' + esc(x.desc + ' · ' + ddShort(x.date)) + '</div></div>' +
           '<div class="regd-right"><span class="regd-amt mono">' + esc(fmtG(x.amount)) + '</span>' +
@@ -1479,7 +1481,8 @@
       (det.cobrado.length === 1 ? ' movimiento' : ' movimientos') + '</div>';
     if (det.cobrado.length) {
       html += '<div class="regd-list">' + det.cobrado.map(function (x) {
-        return '<div class="regd-row"><div class="regd-main">' +
+        var tap = x.clientId ? ' tap" data-open-client="' + esc(x.clientId) + '"' : '"';
+        return '<div class="regd-row' + tap + '><div class="regd-main">' +
           '<div class="regd-name">' + esc(x.client) + '</div>' +
           '<div class="regd-sub">' + esc(x.concept + ' · ' + x.desc + ' · ' + ddShort(x.date)) + '</div></div>' +
           '<span class="regd-amt mono blue">' + esc(fmtG(x.amount)) + '</span></div>';
@@ -1491,6 +1494,9 @@
 
     box.innerHTML = html;
     box.querySelector('.js-back').addEventListener('click', function () { go('registro'); });
+    box.querySelectorAll('[data-open-client]').forEach(function (el) {
+      el.addEventListener('click', function () { goClient(el.getAttribute('data-open-client')); });
+    });
   }
 
   // ===== Render: Cobros =====
