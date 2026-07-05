@@ -5,6 +5,10 @@
 > sin perder nada de lo decidido hasta ahora. Se actualiza cada vez que se agrega
 > algo importante. Si alguna vez perdés el chat, **este archivo es la memoria del
 > proyecto.**
+>
+> **Última actualización:** 2026-07-05 — PIN de 6 a 10 dígitos y bloqueo
+> escalonado persistente por intentos fallidos; se documentó la charla sobre
+> seguridad/dominio/tokens (ver sección 10).
 
 ## 1. Qué es
 
@@ -79,12 +83,22 @@ Fases del plan original (todas hechas):
 
 ### Agregado después de la Fase 7 (a pedido del dueño)
 
-- **Seguridad**: pantalla de PIN de acceso (4-8 dígitos, solo se guarda un
-  *hash* PBKDF2-SHA256 con 150.000 iteraciones — el PIN nunca se persiste en
+- **Seguridad**: pantalla de PIN de acceso (**6 a 10 dígitos**, solo se guarda
+  un *hash* PBKDF2-SHA256 con 150.000 iteraciones — el PIN nunca se persiste en
   claro). Bloqueo automático a los 3 min de inactividad y en cada recarga.
-  5 intentos fallidos → espera 30s. Registro de hasta 4 dispositivos
-  (gestionable desde Ajustes → Seguridad). Content-Security-Policy estricta
-  en el `<head>` (sin scripts externos, sin `eval`).
+  Registro de hasta 4 dispositivos (gestionable desde Ajustes → Seguridad).
+  Content-Security-Policy estricta en el `<head>` (sin scripts externos, sin
+  `eval`).
+- **Bloqueo escalonado por intentos fallidos** (agregado 2026-07-05, opciones
+  "A" y "C" pedidas por el dueño): el contador de intentos ahora es
+  **persistente** (se guarda en `localStorage`, clave `jgm_lock_att_v1`), así
+  que cerrar y reabrir la app **no** reinicia el bloqueo. La espera **crece**
+  con cada tanda de fallos: 5 fallos → 30s, 6 → 1min, 7 → 5min, 8 → 15min,
+  9 → 30min, 10+ → 1h. En los fallos 3 y 4 avisa "te quedan N intentos". Durante
+  la espera hay una **cuenta regresiva viva** en pantalla y el input queda
+  deshabilitado. El desbloqueo correcto y "Olvidé mi PIN" limpian el contador.
+  Funciones clave en `js/app.js`: `loadAtt/saveAtt/clearAtt`, `lockSecsFor`,
+  `fmtWait`, `tickCountdown/stopCountdown`.
 - **Arranque en blanco**: la app empieza sin clientes ni trabajos (solo las
   categorías por defecto). Hay un botón opcional "Cargar datos de ejemplo"
   en Ajustes que **solo aparece cuando la app está vacía** — los datos de
@@ -144,8 +158,9 @@ Fotos (de trabajos y de clientes) en **IndexedDB** `jgm_fotos_v1`, store
 0.72).
 
 PIN: clave `jgm_lock_v1` en `localStorage` — solo `{ salt, iter, hash }`,
-nunca el PIN. Fecha del último respaldo: `jgm_lastBackup`. Id del
-dispositivo: `jgm_device_id`.
+nunca el PIN. Intentos fallidos: `jgm_lock_att_v1` = `{ fails, until }`
+(contador persistente del bloqueo escalonado). Fecha del último respaldo:
+`jgm_lastBackup`. Id del dispositivo: `jgm_device_id`.
 
 Saldo de un trabajo = `price − Σ payments` (se recalcula siempre, nunca se
 guarda un campo "saldo" aparte). `dueDates[].done` se recalcula solo según
@@ -222,3 +237,45 @@ node script_de_verificacion.js   # Playwright: abre, interactúa, screenshots
 Revisar siempre: sin errores de consola, sin desborde horizontal
 (`document.documentElement.scrollWidth > clientWidth`), y capturas de
 pantalla para inspección visual.
+
+## 10. Charla de seguridad / dominio / tokens (dudas resueltas del dueño)
+
+Preguntas importantes que hizo el dueño y las respuestas acordadas (para no
+volver a discutirlas):
+
+- **"¿Pueden gastarme créditos/tokens si acceden al link?"** → **No.** La app
+  es HTML/CSS/JS estático: **no usa ningún token, crédito, IA ni API**. No hay
+  nada que gastar. `js/app.js` no hace ningún `fetch`/XHR a internet; el único
+  `fetch` está en `sw.js` (cachear la propia app). Los tokens/créditos solo se
+  consumen en **el chat de desarrollo con Claude Code** (cuenta de Claude del
+  dueño, protegida por su login) — quien abre la app instalada nunca toca ese
+  chat. Auditoría hecha: sin claves/tokens/secretos en el código; únicas URLs
+  externas = Google Fonts (gratis), `wa.me/` y `google.com/maps` (deep links).
+  CSP con `connect-src 'self'`.
+- **"¿Se exponen los teléfonos de mis clientes si el repo es público?"** →
+  **No.** En GitHub solo está **el programa vacío**. Los datos reales (nombres,
+  teléfonos, montos, deudas) **nunca se suben**: viven solo en el `localStorage`
+  / IndexedDB del teléfono. Quien abre el link ve la app **vacía**. El riesgo
+  real solo existe si alguien tiene **físicamente el teléfono** y además pasa el
+  PIN.
+- **"¿Puedo restringir el acceso solo a mi dominio?"** → Un sitio estático
+  gratis (GitHub Pages) **no** puede filtrar por dominio/IP sin un backend
+  pago. **No hace falta**: el **PIN es el candado real**, los datos no están en
+  la web, y que alguien abra el link **no cuesta nada** (hosting gratis, cero
+  tokens).
+- **Repo privado → descartado.** GitHub Pages gratis **solo** sirve repos
+  **públicos**; ponerlo privado **rompe la instalación gratis**. Como el código
+  no tiene datos ni secretos, dejarlo público no expone nada. **Decisión: el
+  repo queda público** para poder instalar. (Alternativa mencionada pero no
+  elegida: Netlify/Cloudflare Pages sirven desde repo privado gratis, pero es
+  más complejo y no da seguridad extra.)
+- **Refuerzos elegidos e implementados:** "A" (bloqueo escalonado persistente)
+  y "C" (PIN de 6 dígitos). Ver sección 4. **No** se implementó "B" (borrar
+  datos tras N fallos) ni "D" (repo privado).
+- **Red de seguridad fuera de la app** (recordarle al dueño): bloqueo de
+  pantalla del teléfono, "Encontrar mi dispositivo" de Google (borrado remoto
+  si lo roban) y el respaldo cifrado para restaurar en un teléfono nuevo.
+
+> **Regla de oro de seguridad (NO romper):** el PIN lo crea el dueño **en su
+> teléfono** y de él solo se guarda un hash. **Nunca** pedirle ni recibir su PIN
+> ni ninguna contraseña — compartirlo rompería el modelo de seguridad.
