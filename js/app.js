@@ -64,12 +64,17 @@
   }
 
   // ===== Datos =====
+  function defaultCats() { return ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro']; }
+  function defaultExpenseCats() { return ['Movilidad', 'Combustible', 'Viáticos', 'Personal', 'Productos/Materiales', 'Otro']; }
+  var VIATICO_SUBS = ['Desayuno', 'Almuerzo', 'Cena', 'Hospedaje'];
   // Arranque en blanco: la app empieza vacía para cargar datos reales.
   function seedData() {
     return {
       clients: [],
       jobs: [],
-      settings: { categories: ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro'], remindDays: 3, notifEnabled: false, devices: [] },
+      expenses: [],
+      staff: [],
+      settings: { categories: defaultCats(), expenseCategories: defaultExpenseCats(), remindDays: 3, notifEnabled: false, devices: [] },
       demo: false
     };
   }
@@ -93,15 +98,37 @@
       { id: 'j5', clientId: 'c5', category: 'Pesca de equipo', desc: 'Pesca de bomba trancada a 60 m', date: d(-2), price: 4500000, credit: true, remind: 3, payments: [{ id: 'p8', amount: 2000000, date: d(-2), note: 'Seña' }, { id: 'p9', amount: 2500000, date: d(-1), note: 'Saldo total' }], dueDates: [{ id: 'd7', date: d(-1), done: true }], photos: [] },
       { id: 'j6', clientId: 'c6', category: 'Motobomba', desc: 'Motobomba sumergible 1.5 HP con instalación', date: d(-5), price: 6900000, credit: false, remind: 3, payments: [], dueDates: [], photos: [] }
     ];
+    var staff = [
+      { id: 's1', name: 'Personal de ejemplo 1', phone: '', ci: '', notes: 'Ayudante de perforación (dato de muestra).' },
+      { id: 's2', name: 'Personal de ejemplo 2', phone: '', ci: '', notes: '' }
+    ];
+    var expenses = [
+      { id: 'e1', date: d(-53), category: 'Combustible', subtype: '', amount: 450000, note: 'Nafta para la perforación', staffId: '', jobId: 'j1', photos: [] },
+      { id: 'e2', date: d(-52), category: 'Personal', subtype: '', amount: 1200000, note: 'Ayudante, 3 jornales', staffId: 's1', jobId: 'j1', photos: [] },
+      { id: 'e3', date: d(-40), category: 'Viáticos', subtype: 'Almuerzo', amount: 90000, note: '', staffId: '', jobId: '', photos: [] },
+      { id: 'e4', date: d(-8), category: 'Productos/Materiales', subtype: '', amount: 700000, note: 'Caños y abrazaderas', staffId: '', jobId: 'j3', photos: [] },
+      { id: 'e5', date: d(-2), category: 'Movilidad', subtype: '', amount: 120000, note: 'Flete del equipo', staffId: '', jobId: '', photos: [] }
+    ];
     return {
       clients: clients,
       jobs: jobs,
-      settings: { categories: ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro'], remindDays: 3, notifEnabled: false, devices: [] },
+      expenses: expenses,
+      staff: staff,
+      settings: { categories: defaultCats(), expenseCategories: defaultExpenseCats(), remindDays: 3, notifEnabled: false, devices: [] },
       demo: true
     };
   }
 
   // ===== Persistencia =====
+  // Migración suave: completa lo que falte en datos guardados por versiones anteriores
+  function normalizeData(d) {
+    if (!Array.isArray(d.expenses)) d.expenses = [];
+    if (!Array.isArray(d.staff)) d.staff = [];
+    if (!Array.isArray(d.settings.devices)) d.settings.devices = [];
+    if (!Array.isArray(d.settings.categories)) d.settings.categories = defaultCats();
+    if (!Array.isArray(d.settings.expenseCategories)) d.settings.expenseCategories = defaultExpenseCats();
+    return d;
+  }
   function persist(data) {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
   }
@@ -111,7 +138,7 @@
       if (raw) {
         var d = JSON.parse(raw);
         if (d && Array.isArray(d.clients) && Array.isArray(d.jobs) && d.settings) {
-          if (!Array.isArray(d.settings.devices)) d.settings.devices = [];
+          normalizeData(d);
           return d;
         }
       }
@@ -189,11 +216,11 @@
     });
   }
   function loadJobPhotos(j) { loadPhotos(j.photos); }
-  // Devuelve el objeto (trabajo o cliente) dueño de las fotos
+  // Devuelve el objeto (trabajo, cliente o gasto) dueño de las fotos
   function photoOwner(kind, id) {
-    return kind === 'client'
-      ? state.data.clients.find(function (x) { return x.id === id; })
-      : state.data.jobs.find(function (x) { return x.id === id; });
+    if (kind === 'client') return state.data.clients.find(function (x) { return x.id === id; });
+    if (kind === 'exp') return (state.data.expenses || []).find(function (x) { return x.id === id; });
+    return state.data.jobs.find(function (x) { return x.id === id; });
   }
   function imgFromFile(file) {
     return new Promise(function (res, rej) {
@@ -237,7 +264,9 @@
       ok.forEach(function (x) { state.photoCache[x.id] = x.url; });
       var entries = ok.map(function (x) { return { id: x.id, date: todayIso() }; });
       mutate(function (d) {
-        var o = kind === 'client' ? d.clients.find(function (x) { return x.id === id; }) : d.jobs.find(function (x) { return x.id === id; });
+        var o = kind === 'client' ? d.clients.find(function (x) { return x.id === id; })
+          : kind === 'exp' ? (d.expenses || []).find(function (x) { return x.id === id; })
+          : d.jobs.find(function (x) { return x.id === id; });
         if (o) o.photos = (o.photos || []).concat(entries);
       });
       toast(ok.length === 1 ? 'Foto agregada.' : ok.length + ' fotos agregadas.');
@@ -299,8 +328,10 @@
       clientes: ['Clientes', D.clients.length + ' registrados · ' + debtClientsCount() + ' con deuda'],
       cliente: ['Cliente', ''],
       cobros: ['Cobros', 'Avisos de cobro y pendientes'],
-      registro: ['Registro mensual', 'Ingresos mes por mes'],
+      registro: ['Registro mensual', 'Ingresos y gastos mes por mes'],
       regmes: ['Detalle del mes', state.regMonth ? (monthName(state.regMonth) + ' ' + state.regMonth.slice(0, 4)) : ''],
+      gastos: ['Gastos', 'Gastos del negocio'],
+      personal: ['Personales', 'Tu equipo de trabajo'],
       ajustes: ['Ajustes', 'Configuración y respaldo']
     };
   }
@@ -322,7 +353,12 @@
     histDepth -= n;
     try { history.go(-n); } catch (e) { histIgnore -= n; }
   }
-  function viewDepthOf(v) { return v === 'inicio' ? 0 : (v === 'cliente' || v === 'regmes' ? 2 : 1); }
+  function viewDepthOf(v) {
+    if (v === 'inicio') return 0;
+    if (v === 'cliente' || v === 'regmes' || v === 'gastos') return 2;
+    if (v === 'personal') return 3; // se entra desde Gastos
+    return 1;
+  }
   function syncViewHistory(target) {
     var d = viewDepthOf(target);
     if (d > curViewDepth) { for (var i = curViewDepth; i < d; i++) histPush(); }
@@ -783,6 +819,171 @@
     });
     closePostModal();
     toast(wasFijar ? 'Fecha de cobro fijada.' : 'Cobro pospuesto al ' + dd(v) + '.');
+  }
+
+  // ===== Modal gasto =====
+  var expModalEl = document.getElementById('modal-expense');
+  var eForm = {};
+  function staffById(id) { return (state.data.staff || []).find(function (x) { return x.id === id; }); }
+  function renderExpCats() {
+    var box = document.getElementById('ef-cats');
+    var cats = state.data.settings.expenseCategories || defaultExpenseCats();
+    box.innerHTML = cats.map(function (name) {
+      return '<span class="cat-chip' + (eForm.category === name ? ' active' : '') + '" data-ecat="' + esc(name) + '">' + esc(name) + '</span>';
+    }).join('');
+    box.querySelectorAll('[data-ecat]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        eForm.category = el.getAttribute('data-ecat');
+        if (eForm.category !== 'Viáticos') eForm.subtype = '';
+        renderExpCats();
+      });
+    });
+    // subtipo de viáticos
+    var subWrap = document.getElementById('ef-sub-wrap');
+    subWrap.hidden = eForm.category !== 'Viáticos';
+    if (!subWrap.hidden) {
+      var sb = document.getElementById('ef-subs');
+      sb.innerHTML = VIATICO_SUBS.map(function (s) {
+        return '<span class="cat-chip' + (eForm.subtype === s ? ' active' : '') + '" data-esub="' + esc(s) + '">' + esc(s) + '</span>';
+      }).join('');
+      sb.querySelectorAll('[data-esub]').forEach(function (el) {
+        el.addEventListener('click', function () {
+          eForm.subtype = eForm.subtype === el.getAttribute('data-esub') ? '' : el.getAttribute('data-esub');
+          renderExpCats();
+        });
+      });
+    }
+    // personal + trabajo (solo categoría Personal)
+    var stWrap = document.getElementById('ef-staff-wrap');
+    var jbWrap = document.getElementById('ef-job-wrap');
+    stWrap.hidden = eForm.category !== 'Personal';
+    jbWrap.hidden = eForm.category !== 'Personal';
+    if (!stWrap.hidden) {
+      var staff = state.data.staff || [];
+      var sel = document.getElementById('ef-staff');
+      sel.innerHTML = '<option value="">Elegir personal…</option>' + staff.map(function (s) {
+        return '<option value="' + esc(s.id) + '">' + esc(s.name) + '</option>';
+      }).join('');
+      sel.value = eForm.staffId || '';
+      sel.onchange = function () { eForm.staffId = sel.value; };
+      document.getElementById('ef-staff-hint').hidden = staff.length > 0;
+      var jsel = document.getElementById('ef-job');
+      var cById = {};
+      state.data.clients.forEach(function (c) { cById[c.id] = c; });
+      var jobs = (state.data.jobs || []).slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; }).slice(0, 40);
+      jsel.innerHTML = '<option value="">Sin trabajo asociado</option>' + jobs.map(function (j) {
+        var cn = (cById[j.clientId] || {}).name || '—';
+        return '<option value="' + esc(j.id) + '">' + esc(cn + ' · ' + (j.desc || j.category) + ' · ' + ddShort(j.date)) + '</option>';
+      }).join('');
+      jsel.value = eForm.jobId || '';
+      jsel.onchange = function () { eForm.jobId = jsel.value; };
+    }
+  }
+  function openExpenseModal(exp) {
+    eForm = exp
+      ? { id: exp.id, category: exp.category, subtype: exp.subtype || '', staffId: exp.staffId || '', jobId: exp.jobId || '' }
+      : { id: null, category: (state.data.settings.expenseCategories || defaultExpenseCats())[0], subtype: '', staffId: '', jobId: '' };
+    document.getElementById('ef-title').textContent = exp ? 'Editar gasto' : 'Registrar gasto';
+    document.getElementById('ef-save').textContent = exp ? 'Guardar cambios' : 'Guardar gasto';
+    document.getElementById('ef-date').value = exp ? exp.date : todayIso();
+    document.getElementById('ef-amount').value = exp ? dots(exp.amount) : '';
+    document.getElementById('ef-note').value = exp ? (exp.note || '') : '';
+    var err = document.getElementById('ef-err');
+    err.hidden = true;
+    err.textContent = '';
+    renderExpCats();
+    if (expModalEl.hidden) histPush();
+    expModalEl.hidden = false;
+    document.getElementById('ef-amount').focus();
+  }
+  function closeExpModal() { if (!expModalEl.hidden) { expModalEl.hidden = true; histConsume(); } }
+  function expErr(msg) {
+    var err = document.getElementById('ef-err');
+    err.textContent = msg;
+    err.hidden = false;
+  }
+  function submitExpense() {
+    var amount = parseMoney(document.getElementById('ef-amount').value);
+    if (amount <= 0) { expErr('Cargá el monto del gasto.'); return; }
+    if (!eForm.category) { expErr('Elegí la categoría.'); return; }
+    var staffId = eForm.category === 'Personal' ? (document.getElementById('ef-staff').value || '') : '';
+    if (eForm.category === 'Personal' && !staffId) { expErr('Elegí a qué personal le pagaste.'); return; }
+    var jobId = eForm.category === 'Personal' ? (document.getElementById('ef-job').value || '') : '';
+    var date = document.getElementById('ef-date').value || todayIso();
+    var note = document.getElementById('ef-note').value || '';
+    var editing = !!eForm.id;
+    mutate(function (d) {
+      if (editing) {
+        var x = d.expenses.find(function (e) { return e.id === eForm.id; });
+        if (x) {
+          x.date = date; x.category = eForm.category; x.subtype = eForm.subtype || '';
+          x.amount = amount; x.note = note; x.staffId = staffId; x.jobId = jobId;
+        }
+      } else {
+        d.expenses.push({
+          id: uid(), date: date, category: eForm.category, subtype: eForm.subtype || '',
+          amount: amount, note: note, staffId: staffId, jobId: jobId, photos: []
+        });
+      }
+    });
+    closeExpModal();
+    vib(30);
+    toast(editing ? 'Gasto actualizado.' : 'Gasto registrado.');
+  }
+  function delExpense(id) {
+    var x = (state.data.expenses || []).find(function (e) { return e.id === id; });
+    if (x) delOwnerPhotos(x);
+    mutate(function (d) {
+      d.expenses = (d.expenses || []).filter(function (e) { return e.id !== id; });
+    });
+    toast('Gasto eliminado.');
+  }
+
+  // ===== Modal personal =====
+  var staffModalEl = document.getElementById('modal-staff');
+  var sForm = { id: null };
+  function openStaffModal(st) {
+    sForm = { id: st ? st.id : null };
+    document.getElementById('sf-title').textContent = st ? 'Editar personal' : 'Agregar personal';
+    document.getElementById('sf-name').value = st ? st.name : '';
+    document.getElementById('sf-phone').value = st ? (st.phone || '') : '';
+    document.getElementById('sf-ci').value = st ? (st.ci || '') : '';
+    document.getElementById('sf-notes').value = st ? (st.notes || '') : '';
+    var err = document.getElementById('sf-err');
+    err.hidden = true;
+    err.textContent = '';
+    if (staffModalEl.hidden) histPush();
+    staffModalEl.hidden = false;
+    document.getElementById('sf-name').focus();
+  }
+  function closeStaffModal() { if (!staffModalEl.hidden) { staffModalEl.hidden = true; histConsume(); } }
+  function submitStaff() {
+    var name = document.getElementById('sf-name').value.trim();
+    if (!name) {
+      var err = document.getElementById('sf-err');
+      err.textContent = 'El nombre es obligatorio.';
+      err.hidden = false;
+      return;
+    }
+    var phone = document.getElementById('sf-phone').value;
+    var ci = document.getElementById('sf-ci').value;
+    var notes = document.getElementById('sf-notes').value;
+    mutate(function (d) {
+      if (sForm.id) {
+        var s = d.staff.find(function (x) { return x.id === sForm.id; });
+        if (s) { s.name = name; s.phone = phone; s.ci = ci; s.notes = notes; }
+      } else {
+        d.staff.push({ id: uid(), name: name, phone: phone, ci: ci, notes: notes });
+      }
+    });
+    closeStaffModal();
+    toast(sForm.id ? 'Personal actualizado.' : 'Personal guardado.');
+  }
+  function delStaff(id) {
+    mutate(function (d) {
+      d.staff = (d.staff || []).filter(function (s) { return s.id !== id; });
+    });
+    toast('Personal eliminado. Sus pagos registrados se conservan.');
   }
 
   // ===== Notificaciones (máx. 1/día) =====
@@ -1557,7 +1758,7 @@
   }
   function monthlyStats() {
     var map = {};
-    function bkt(ym) { if (!map[ym]) map[ym] = { facturado: 0, cobrado: 0 }; return map[ym]; }
+    function bkt(ym) { if (!map[ym]) map[ym] = { facturado: 0, cobrado: 0, gastos: 0 }; return map[ym]; }
     (state.data.jobs || []).forEach(function (j) {
       var jm = (j.date || '').slice(0, 7);
       var price = Number(j.price) || 0;
@@ -1571,8 +1772,13 @@
         bkt(jm).cobrado += price;
       }
     });
+    (state.data.expenses || []).forEach(function (e) {
+      var em = (e.date || '').slice(0, 7);
+      if (em) bkt(em).gastos += Number(e.amount) || 0;
+    });
     return Object.keys(map).sort().reverse().map(function (ym) {
-      return { ym: ym, mes: monthName(ym), anio: ym.slice(0, 4), facturado: map[ym].facturado, cobrado: map[ym].cobrado };
+      var m = map[ym];
+      return { ym: ym, mes: monthName(ym), anio: ym.slice(0, 4), facturado: m.facturado, cobrado: m.cobrado, gastos: m.gastos, resultado: m.cobrado - m.gastos };
     });
   }
 
@@ -1583,31 +1789,43 @@
       '<button type="button" class="btn-white js-back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Volver</button>' +
       '<div class="spacer"></div></div>';
 
+    // acceso al módulo de gastos (y desde ahí, personales)
+    html += '<button type="button" class="reg-open js-goto-gastos">' +
+      '<span class="reg-open-main"><span class="reg-open-title">Gastos del negocio</span>' +
+      '<span class="reg-open-sub">Registrar combustible, viáticos, personal…</span></span>' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>';
+
     if (!rows.length) {
-      html += '<div class="panel"><div class="panel-empty">Todavía no hay ingresos cargados. Cuando registres trabajos, vas a ver acá el resumen mes por mes.</div></div>';
+      html += '<div class="panel"><div class="panel-empty">Todavía no hay movimientos. Cuando registres trabajos o gastos, vas a ver acá el resumen mes por mes.</div></div>';
       box.innerHTML = html;
       box.querySelector('.js-back').addEventListener('click', function () { go('inicio'); });
+      box.querySelector('.js-goto-gastos').addEventListener('click', function () { go('gastos'); });
       return;
     }
 
     // totales generales (todo el historial)
-    var totF = 0, totC = 0;
-    rows.forEach(function (r) { totF += r.facturado; totC += r.cobrado; });
+    var totF = 0, totC = 0, totG = 0;
+    rows.forEach(function (r) { totF += r.facturado; totC += r.cobrado; totG += r.gastos; });
+    var totR = totC - totG;
     html += '<div class="reg-total"><div class="reg-total-row"><span>Facturado (total)</span>' +
       '<span class="mono">' + esc(fmtG(totF)) + '</span></div>' +
       '<div class="reg-total-row"><span>Cobrado (total)</span>' +
-      '<span class="mono blue">' + esc(fmtG(totC)) + '</span></div></div>';
+      '<span class="mono blue">' + esc(fmtG(totC)) + '</span></div>' +
+      '<div class="reg-total-row"><span>Gastos (total)</span>' +
+      '<span class="mono red">− ' + esc(fmtG(totG)) + '</span></div>' +
+      '<div class="reg-total-row result"><span>Resultado (cobrado − gastos)</span>' +
+      '<span class="mono ' + (totR >= 0 ? 'green' : 'red') + '">' + esc(fmtG(totR)) + '</span></div></div>';
 
-    html += '<div class="reg-hint">Facturado = trabajos hechos ese mes. Cobrado = plata que entró ese mes.</div>';
+    html += '<div class="reg-hint">Facturado = trabajos hechos ese mes. Cobrado = plata que entró. Resultado = cobrado − gastos del mes.</div>';
 
     // meses agrupados por año, con subtotal anual
     var lastYear = null;
     rows.forEach(function (r) {
       if (r.anio !== lastYear) {
-        var yF = 0, yC = 0;
-        rows.forEach(function (x) { if (x.anio === r.anio) { yF += x.facturado; yC += x.cobrado; } });
+        var yC = 0, yG = 0;
+        rows.forEach(function (x) { if (x.anio === r.anio) { yC += x.cobrado; yG += x.gastos; } });
         html += '<div class="reg-year"><span class="reg-year-lbl">' + esc(r.anio) + '</span>' +
-          '<span class="reg-year-nums">Fact. ' + esc(fmtG(yF)) + ' · Cob. ' + esc(fmtG(yC)) + '</span></div>';
+          '<span class="reg-year-nums">Cob. ' + esc(fmtG(yC)) + ' · Gas. ' + esc(fmtG(yG)) + ' · Res. ' + esc(fmtG(yC - yG)) + '</span></div>';
         lastYear = r.anio;
       }
       html += '<div class="reg-row" data-reg-month="' + esc(r.ym) + '">' +
@@ -1616,11 +1834,14 @@
         '<div class="reg-nums">' +
           '<div class="reg-num"><span class="reg-cap">Facturado</span><span class="reg-val mono">' + esc(fmtG(r.facturado)) + '</span></div>' +
           '<div class="reg-num"><span class="reg-cap">Cobrado</span><span class="reg-val mono blue">' + esc(fmtG(r.cobrado)) + '</span></div>' +
+          '<div class="reg-num"><span class="reg-cap">Gastos</span><span class="reg-val mono red">' + (r.gastos ? '− ' + esc(fmtG(r.gastos)) : esc(fmtG(0))) + '</span></div>' +
+          '<div class="reg-num"><span class="reg-cap">Resultado</span><span class="reg-val mono ' + (r.resultado >= 0 ? 'green' : 'red') + '">' + esc(fmtG(r.resultado)) + '</span></div>' +
         '</div></div>';
     });
 
     box.innerHTML = html;
     box.querySelector('.js-back').addEventListener('click', function () { go('inicio'); });
+    box.querySelector('.js-goto-gastos').addEventListener('click', function () { go('gastos'); });
     box.querySelectorAll('[data-reg-month]').forEach(function (el) {
       el.addEventListener('click', function () { goRegMonth(el.getAttribute('data-reg-month')); });
     });
@@ -1661,6 +1882,10 @@
     var det = monthDetail(ym);
     var totF = det.facturado.reduce(function (a, x) { return a + x.amount; }, 0);
     var totC = det.cobrado.reduce(function (a, x) { return a + x.amount; }, 0);
+    var gastosMes = (state.data.expenses || []).filter(function (e) { return (e.date || '').slice(0, 7) === ym; })
+      .sort(function (a, b) { return (a.date || '') < (b.date || '') ? -1 : 1; });
+    var totG = gastosMes.reduce(function (a, x) { return a + (Number(x.amount) || 0); }, 0);
+    var totR = totC - totG;
 
     var html = '<div class="detail-header">' +
       '<button type="button" class="btn-white js-back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Volver</button>' +
@@ -1670,6 +1895,8 @@
       '<div class="regd-tots">' +
         '<div class="regd-tot"><span class="regd-tot-cap">Facturado</span><span class="regd-tot-val mono">' + esc(fmtG(totF)) + '</span></div>' +
         '<div class="regd-tot"><span class="regd-tot-cap">Cobrado</span><span class="regd-tot-val mono blue">' + esc(fmtG(totC)) + '</span></div>' +
+        '<div class="regd-tot"><span class="regd-tot-cap">Gastos</span><span class="regd-tot-val mono red">' + (totG ? '− ' + esc(fmtG(totG)) : esc(fmtG(0))) + '</span></div>' +
+        '<div class="regd-tot"><span class="regd-tot-cap">Resultado</span><span class="regd-tot-val mono ' + (totR >= 0 ? 'green' : 'red') + '">' + esc(fmtG(totR)) + '</span></div>' +
       '</div></div>';
 
     // Facturación del mes (trabajos hechos ese mes)
@@ -1707,10 +1934,172 @@
     }
     html += '</div>';
 
+    // Gastos del mes
+    html += '<div class="panel"><div class="panel-label">Gastos · ' + gastosMes.length +
+      (gastosMes.length === 1 ? ' movimiento' : ' movimientos') + '</div>';
+    if (gastosMes.length) {
+      html += '<div class="regd-list">' + gastosMes.map(function (e) {
+        var st = e.staffId ? staffById(e.staffId) : null;
+        var sub = [e.subtype || '', st ? st.name : (e.staffId ? '(personal eliminado)' : ''), e.note || '']
+          .filter(Boolean).join(' · ');
+        return '<div class="regd-row tap" data-goto-gastos="1"><div class="regd-main">' +
+          '<div class="regd-name">' + esc(e.category || 'Gasto') + '</div>' +
+          '<div class="regd-sub">' + esc((sub ? sub + ' · ' : '') + ddShort(e.date)) + '</div></div>' +
+          '<span class="regd-amt mono red">− ' + esc(fmtG(e.amount)) + '</span></div>';
+      }).join('') + '</div>';
+    } else {
+      html += '<div class="panel-empty">No hubo gastos registrados este mes.</div>';
+    }
+    html += '</div>';
+
     box.innerHTML = html;
     box.querySelector('.js-back').addEventListener('click', function () { go('registro'); });
     box.querySelectorAll('[data-open-client]').forEach(function (el) {
       el.addEventListener('click', function () { goClient(el.getAttribute('data-open-client')); });
+    });
+    box.querySelectorAll('[data-goto-gastos]').forEach(function (el) {
+      el.addEventListener('click', function () { go('gastos'); });
+    });
+  }
+
+  // ===== Render: Gastos =====
+  function renderGastos() {
+    var box = document.getElementById('gastos-content');
+    var exps = (state.data.expenses || []).slice()
+      .sort(function (a, b) { return (a.date || '') < (b.date || '') ? 1 : -1; });
+    var phEntries = [];
+    exps.forEach(function (e) { (e.photos || []).forEach(function (p) { phEntries.push(p); }); });
+    loadPhotos(phEntries);
+
+    var html = '<div class="detail-header">' +
+      '<button type="button" class="btn-white js-back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Volver</button>' +
+      '<div class="spacer"></div>' +
+      '<button type="button" class="btn-white js-goto-personal">Personales</button></div>';
+
+    html += '<button type="button" class="btn-big-primary js-new-expense">+ Registrar gasto</button>';
+
+    if (!exps.length) {
+      html += '<div class="dashed-card">Todavía no registraste gastos. Cargá acá el combustible, los viáticos, los pagos al personal y todo lo que gasta el negocio — así el registro mensual muestra tu resultado real.</div>';
+    } else {
+      var lastMonth = null;
+      exps.forEach(function (e) {
+        var em = (e.date || '').slice(0, 7);
+        if (em !== lastMonth) {
+          var mTot = exps.reduce(function (a, x) { return a + ((x.date || '').slice(0, 7) === em ? (Number(x.amount) || 0) : 0); }, 0);
+          html += '<div class="reg-year"><span class="reg-year-lbl">' + esc(monthName(em) + ' ' + em.slice(0, 4)) + '</span>' +
+            '<span class="reg-year-nums">− ' + esc(fmtG(mTot)) + '</span></div>';
+          lastMonth = em;
+        }
+        var st = e.staffId ? staffById(e.staffId) : null;
+        var job = e.jobId ? (state.data.jobs || []).find(function (j) { return j.id === e.jobId; }) : null;
+        var subBits = [
+          e.subtype || '',
+          st ? st.name : (e.staffId ? '(personal eliminado)' : ''),
+          job ? 'por: ' + (job.desc || job.category) : '',
+          e.note || ''
+        ].filter(Boolean);
+        var delLbl = state.confirmKey === 'delexp:' + e.id ? '¿?' : '✕';
+        html += '<div class="exp-row">' +
+          '<div class="exp-main">' +
+          '<div class="exp-top"><span class="exp-chip">' + esc(e.category || 'Gasto') + '</span>' +
+          '<span class="exp-date">' + esc(dd(e.date)) + '</span></div>' +
+          (subBits.length ? '<div class="exp-note">' + esc(subBits.join(' · ')) + '</div>' : '') +
+          ((e.photos || []).length ? '<div class="photo-grid mini">' + (e.photos || []).map(function (p, i) {
+            var src = state.photoCache[p.id] || PIXEL;
+            return '<img class="photo-thumb sm" alt="Comprobante" src="' + esc(src) + '" data-ph-open="exp:' + esc(e.id) + ':' + i + '">';
+          }).join('') + '</div>' : '') +
+          '</div>' +
+          '<div class="exp-right"><span class="exp-amt mono">− ' + esc(fmtG(e.amount)) + '</span>' +
+          '<div class="exp-actions">' +
+          '<button type="button" class="pay-btn" data-exp-photo="' + esc(e.id) + '" aria-label="Agregar comprobante">📷</button>' +
+          '<button type="button" class="pay-btn pay-edit" data-exp-edit="' + esc(e.id) + '" aria-label="Editar gasto">✎</button>' +
+          '<button type="button" class="pay-btn pay-del" data-exp-del="' + esc(e.id) + '" aria-label="Borrar gasto">' + delLbl + '</button>' +
+          '</div></div></div>';
+      });
+    }
+
+    box.innerHTML = html;
+    box.querySelector('.js-back').addEventListener('click', function () { go('registro'); });
+    box.querySelector('.js-goto-personal').addEventListener('click', function () { go('personal'); });
+    box.querySelector('.js-new-expense').addEventListener('click', function () { openExpenseModal(null); });
+    box.querySelectorAll('[data-exp-edit]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var e = (state.data.expenses || []).find(function (x) { return x.id === el.getAttribute('data-exp-edit'); });
+        if (e) openExpenseModal(e);
+      });
+    });
+    box.querySelectorAll('[data-exp-del]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var id = el.getAttribute('data-exp-del');
+        confirm2('delexp:' + id, function () { delExpense(id); });
+      });
+    });
+    box.querySelectorAll('[data-exp-photo]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        _photoTarget = { kind: 'exp', id: el.getAttribute('data-exp-photo') };
+        photoInput.click();
+      });
+    });
+    box.querySelectorAll('[data-ph-open]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var parts = el.getAttribute('data-ph-open').split(':');
+        var owner = photoOwner(parts[0], parts[1]);
+        if (owner) loadPhotos(owner.photos);
+        if (!state.viewer) histPush();
+        state.viewer = { kind: parts[0], id: parts[1], idx: Number(parts[2]) };
+        render();
+      });
+    });
+  }
+
+  // ===== Render: Personales =====
+  function renderPersonal() {
+    var box = document.getElementById('personal-content');
+    var staff = (state.data.staff || []).slice()
+      .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+    var paidBy = {};
+    (state.data.expenses || []).forEach(function (e) {
+      if (e.staffId) paidBy[e.staffId] = (paidBy[e.staffId] || 0) + (Number(e.amount) || 0);
+    });
+
+    var html = '<div class="detail-header">' +
+      '<button type="button" class="btn-white js-back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Volver</button>' +
+      '<div class="spacer"></div></div>';
+
+    html += '<button type="button" class="btn-big-primary js-new-staff">+ Agregar personal</button>';
+
+    if (!staff.length) {
+      html += '<div class="dashed-card">Todavía no cargaste personales. Agregá a las personas que te ayudan en los trabajos para registrar cuánto le pagás a cada uno.</div>';
+    } else {
+      html += staff.map(function (s) {
+        var meta = [s.phone || '', s.ci || ''].filter(Boolean).join(' · ');
+        var delLbl = state.confirmKey === 'delstaff:' + s.id ? '¿Seguro?' : '✕';
+        return '<div class="staff-row">' +
+          '<div class="avatar">' + esc(initials(s.name)) + '</div>' +
+          '<div class="staff-main"><div class="staff-name">' + esc(s.name) + '</div>' +
+          '<div class="staff-sub">' + esc(meta || 'Sin datos de contacto') + (s.notes ? ' · ' + esc(s.notes) : '') + '</div>' +
+          '<div class="staff-paid">Pagado en total: <span class="mono">' + esc(fmtG(paidBy[s.id] || 0)) + '</span></div></div>' +
+          '<div class="exp-actions">' +
+          '<button type="button" class="pay-btn pay-edit" data-staff-edit="' + esc(s.id) + '" aria-label="Editar personal">✎</button>' +
+          '<button type="button" class="pay-btn pay-del" data-staff-del="' + esc(s.id) + '" aria-label="Borrar personal">' + delLbl + '</button>' +
+          '</div></div>';
+      }).join('');
+    }
+
+    box.innerHTML = html;
+    box.querySelector('.js-back').addEventListener('click', function () { go('gastos'); });
+    box.querySelector('.js-new-staff').addEventListener('click', function () { openStaffModal(null); });
+    box.querySelectorAll('[data-staff-edit]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var s = (state.data.staff || []).find(function (x) { return x.id === el.getAttribute('data-staff-edit'); });
+        if (s) openStaffModal(s);
+      });
+    });
+    box.querySelectorAll('[data-staff-del]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var id = el.getAttribute('data-staff-del');
+        confirm2('delstaff:' + id, function () { delStaff(id); });
+      });
     });
   }
 
@@ -1850,6 +2239,7 @@
     var ids = [];
     (data.jobs || []).forEach(function (j) { (j.photos || []).forEach(function (p) { ids.push(p.id); }); });
     (data.clients || []).forEach(function (c) { (c.photos || []).forEach(function (p) { ids.push(p.id); }); });
+    (data.expenses || []).forEach(function (e) { (e.photos || []).forEach(function (p) { ids.push(p.id); }); });
     return Promise.all(ids.map(function (id) { return idbGet(id).catch(function () { return null; }); })).then(function (vals) {
       var photos = {};
       ids.forEach(function (id, i) { if (vals[i]) photos[id] = vals[i]; });
@@ -1914,7 +2304,7 @@
       render();
       return;
     }
-    if (!Array.isArray(d.settings.devices)) d.settings.devices = [];
+    normalizeData(d); // respaldos viejos (sin gastos/personal) importan sin romper
     var photos = (d.photos && typeof d.photos === 'object' && !Array.isArray(d.photos)) ? d.photos : {};
     delete d.photos;
     var nF = Object.keys(photos).length;
@@ -1927,7 +2317,8 @@
     state.photoCache = photos;
     state.viewer = null;
     ensureDevice();
-    ajustesMsg = 'Respaldo importado: ' + d.clients.length + ' clientes, ' + d.jobs.length + ' trabajos' + (nF ? ' y ' + nF + ' fotos.' : '.');
+    ajustesMsg = 'Respaldo importado: ' + d.clients.length + ' clientes, ' + d.jobs.length + ' trabajos, ' +
+      d.expenses.length + ' gastos, ' + d.staff.length + ' personales' + (nF ? ' y ' + nF + ' fotos.' : '.');
     render();
   }
   function doImportFile(file) {
@@ -1960,8 +2351,8 @@
   }
   function wipeAll() {
     var d = {
-      clients: [], jobs: [],
-      settings: { categories: ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro'], remindDays: 3, notifEnabled: state.data.settings.notifEnabled, devices: (state.data.settings.devices || []).slice() },
+      clients: [], jobs: [], expenses: [], staff: [],
+      settings: { categories: defaultCats(), expenseCategories: defaultExpenseCats(), remindDays: 3, notifEnabled: state.data.settings.notifEnabled, devices: (state.data.settings.devices || []).slice() },
       demo: false
     };
     persist(d);
@@ -2010,6 +2401,14 @@
     });
     html += '</div><div class="cat-add"><input id="set-cat-new" type="text" autocomplete="off" placeholder="Nueva categoría…">' +
       '<button type="button" class="set-btn-outline js-cat-add">Agregar</button></div></div>';
+
+    // Categorías de gastos
+    html += '<div class="set-card"><div class="set-title">Categorías de gastos</div><div class="cat-list">';
+    (S.expenseCategories || []).forEach(function (name, i) {
+      html += '<span class="cat-tag">' + esc(name) + ' <span class="x" data-ecat-rm="' + i + '">✕</span></span>';
+    });
+    html += '</div><div class="cat-add"><input id="set-ecat-new" type="text" autocomplete="off" placeholder="Nueva categoría de gasto…">' +
+      '<button type="button" class="set-btn-outline js-ecat-add">Agregar</button></div></div>';
 
     // Respaldo
     var dsb = daysSinceBackup();
@@ -2086,6 +2485,20 @@
     };
     box.querySelector('.js-cat-add').addEventListener('click', addCat);
     box.querySelector('#set-cat-new').addEventListener('keydown', function (e) { if (e.key === 'Enter') addCat(); });
+    box.querySelectorAll('[data-ecat-rm]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var i = Number(el.getAttribute('data-ecat-rm'));
+        mutate(function (d) { d.settings.expenseCategories.splice(i, 1); });
+      });
+    });
+    var addECat = function () {
+      var input = box.querySelector('#set-ecat-new');
+      var v = (input.value || '').trim();
+      if (!v) return;
+      mutate(function (d) { if (d.settings.expenseCategories.indexOf(v) === -1) d.settings.expenseCategories.push(v); });
+    };
+    box.querySelector('.js-ecat-add').addEventListener('click', addECat);
+    box.querySelector('#set-ecat-new').addEventListener('keydown', function (e) { if (e.key === 'Enter') addECat(); });
     box.querySelector('.js-cloud').addEventListener('click', doCloudBackup);
     box.querySelector('.js-export').addEventListener('click', doExport);
     box.querySelector('.js-import').addEventListener('click', function () { document.getElementById('import-input').click(); });
@@ -2137,7 +2550,8 @@
     });
 
     // nav activa: Clientes queda resaltado en la ficha; Inicio en el registro
-    var navView = view === 'cliente' ? 'clientes' : (view === 'registro' || view === 'regmes' ? 'inicio' : view);
+    var navView = view === 'cliente' ? 'clientes'
+      : (view === 'registro' || view === 'regmes' || view === 'gastos' || view === 'personal' ? 'inicio' : view);
     document.querySelectorAll('[data-nav]').forEach(function (el) {
       if (el.classList.contains('nav-item') || el.classList.contains('tab-item')) {
         el.classList.toggle('active', el.getAttribute('data-nav') === navView);
@@ -2175,6 +2589,8 @@
     if (view === 'cobros') renderCobros();
     if (view === 'registro') renderRegistro();
     if (view === 'regmes') renderRegMonth();
+    if (view === 'gastos') renderGastos();
+    if (view === 'personal') renderPersonal();
     if (view === 'ajustes') renderAjustes();
 
     // visor de fotos (overlay, independiente de la pantalla)
@@ -2264,6 +2680,20 @@
   clearErrOnInput(['jf-client', 'jf-price', 'jf-down'], 'jf-err');
   clearErrOnInput(['pf-amount'], 'pf-err');
 
+  // modal gasto
+  expModalEl.addEventListener('click', function (e) { if (e.target === expModalEl) closeExpModal(); });
+  document.getElementById('ef-cancel').addEventListener('click', closeExpModal);
+  document.getElementById('ef-save').addEventListener('click', submitExpense);
+  moneyInput(document.getElementById('ef-amount'));
+  clearErrOnInput(['ef-amount', 'ef-staff'], 'ef-err');
+
+  // modal personal
+  staffModalEl.addEventListener('click', function (e) { if (e.target === staffModalEl) closeStaffModal(); });
+  document.getElementById('sf-cancel').addEventListener('click', closeStaffModal);
+  document.getElementById('sf-save').addEventListener('click', submitStaff);
+  document.getElementById('sf-name').addEventListener('keydown', function (e) { if (e.key === 'Enter') submitStaff(); });
+  clearErrOnInput(['sf-name'], 'sf-err');
+
   // modal posponer / fijar fecha
   postModalEl.addEventListener('click', function (e) { if (e.target === postModalEl) closePostModal(); });
   document.getElementById('pp-cancel').addEventListener('click', closePostModal);
@@ -2286,6 +2716,8 @@
     if (!jobModalEl.hidden) closeJobModal();
     if (!payModalEl.hidden) closePayModal();
     if (!postModalEl.hidden) closePostModal();
+    if (!expModalEl.hidden) closeExpModal();
+    if (!staffModalEl.hidden) closeStaffModal();
   });
   // flechas del teclado en el visor (escritorio)
   document.addEventListener('keydown', function (e) {
@@ -2612,7 +3044,7 @@
       // borra todo (PIN + datos + fotos) — recuperable desde un respaldo
       localStorage.removeItem(LOCK_KEY);
       clearAtt();
-      var fresh = { clients: [], jobs: [], settings: { categories: ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro'], remindDays: 3, notifEnabled: false, devices: [] }, demo: false };
+      var fresh = seedData();
       persist(fresh); state.data = fresh; state.photoCache = {}; _pp = {};
       idbClear().catch(function () {});
       openLock('create');
@@ -2644,6 +3076,8 @@
     if (!jobModalEl.hidden) { jobModalEl.hidden = true; return; }
     if (!payModalEl.hidden) { payModalEl.hidden = true; return; }
     if (!postModalEl.hidden) { postModalEl.hidden = true; return; }
+    if (!expModalEl.hidden) { expModalEl.hidden = true; return; }
+    if (!staffModalEl.hidden) { staffModalEl.hidden = true; return; }
     // 3) retroceso de pantalla: ficha -> clientes -> inicio
     if (state.view === 'cliente') {
       curViewDepth = 1;
@@ -2653,10 +3087,19 @@
       window.scrollTo(0, 0);
       return;
     }
-    // detalle del mes -> registro
-    if (state.view === 'regmes') {
+    // detalle del mes / gastos -> registro
+    if (state.view === 'regmes' || state.view === 'gastos') {
       curViewDepth = 1;
       state.view = 'registro';
+      state.confirmKey = null;
+      render();
+      window.scrollTo(0, 0);
+      return;
+    }
+    // personales -> gastos
+    if (state.view === 'personal') {
+      curViewDepth = 2;
+      state.view = 'gastos';
       state.confirmKey = null;
       render();
       window.scrollTo(0, 0);

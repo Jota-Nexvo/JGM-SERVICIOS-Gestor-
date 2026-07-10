@@ -193,6 +193,37 @@ Fases del plan original (todas hechas):
   `maintDiffLabel`, `setMaint`, `askMaintMonths`, `maintDone`, `clearMaint`,
   `openPostMaint`.
 
+### Etapa C1 de la ampliación (2026-07-10) — Gastos y Personal
+
+- **Modelo**: `expenses: [{ id, date, category, subtype, amount, note, staffId,
+  jobId, photos }]` y `staff: [{ id, name, phone, ci, notes }]`;
+  `settings.expenseCategories` (por defecto: Movilidad, Combustible, Viáticos,
+  Personal, Productos/Materiales, Otro). Migración suave en `normalizeData()`
+  (usada por `loadData` e importación de respaldos viejos → arrays vacíos).
+- **Pantalla Gastos** (`screen-gastos`, vista `gastos`, profundidad 2, se entra
+  desde el botón "Gastos del negocio" del Registro mensual): lista agrupada por
+  mes con total mensual, botón "+ Registrar gasto", editar (✎), borrar (✕ con
+  doble toque, borra fotos en cascada) y 📷 para foto del comprobante (pipeline
+  IndexedDB existente, `photoOwner` ahora acepta kind `'exp'`).
+- **Modal de gasto** (`#modal-expense`): categoría (chips), subtipo si Viáticos
+  (Desayuno/Almuerzo/Cena/Hospedaje), personal obligatorio + trabajo opcional
+  si categoría Personal, fecha, monto, nota.
+- **Pantalla Personales** (`screen-personal`, profundidad 3, se entra desde
+  Gastos): alta/edición/borrado (modal `#modal-staff`: nombre, teléfono, CI,
+  notas) y **total pagado** a cada uno (suma de gastos con su `staffId`).
+  Borrar un personal conserva sus pagos registrados.
+- **Registro mensual**: `monthlyStats()` ahora suma `gastos` por mes y calcula
+  `resultado = cobrado − gastos`; la pantalla muestra 4 números por mes
+  (grilla 2×2 en móvil), subtotales anuales Cob./Gas./Res. y el total general
+  con la fila "Resultado". **Detalle del mes**: totales con Gastos y Resultado
+  + panel "Gastos" con los movimientos del mes.
+- **Ajustes**: nueva tarjeta "Categorías de gastos" (mismo patrón que las de
+  servicio). **Respaldos**: incluyen gastos/personal/fotos de comprobantes;
+  mensaje de importación con conteos nuevos.
+- Funciones clave: `normalizeData`, `openExpenseModal/submitExpense/delExpense`,
+  `openStaffModal/submitStaff/delStaff`, `staffById`, `renderGastos`,
+  `renderPersonal`. Navegación: atrás = personal → gastos → registro → inicio.
+
 ## 5. Modelo de datos
 
 Clave de `localStorage`: **`jgm_gestor_v1`**. Estructura:
@@ -202,6 +233,7 @@ Clave de `localStorage`: **`jgm_gestor_v1`**. Estructura:
   clients: [{
     id, name, phone, address, ci, notes,
     mapsUrl,                 // opcional: link de Google Maps
+    maint,                   // opcional: { months, next } — mantenimiento periódico
     photos: [{ id, date }]   // "fotos del lugar"; binarios en IndexedDB
   }],
   jobs: [{
@@ -211,8 +243,15 @@ Clave de `localStorage`: **`jgm_gestor_v1`**. Estructura:
     remind: null|number,     // override del aviso global
     photos: [{ id, date }]   // fotos del trabajo; binarios en IndexedDB
   }],
+  expenses: [{               // gastos del negocio (Etapa C1)
+    id, date, category, subtype,   // subtype solo Viáticos
+    amount, note,
+    staffId, jobId,          // solo categoría Personal (jobId opcional)
+    photos: [{ id, date }]   // foto del comprobante; binarios en IndexedDB
+  }],
+  staff: [{ id, name, phone, ci, notes }],   // personales (Etapa C1)
   settings: {
-    categories: [...], remindDays, notifEnabled,
+    categories: [...], expenseCategories: [...], remindDays, notifEnabled,
     devices: [{ id, name, added }]   // dispositivos autorizados (máx. 4)
   },
   demo: bool
@@ -382,7 +421,7 @@ por el dueño — no re-preguntar.
     **Finanzas**; Ajustes accesible desde Inicio.
   - **Solo guaraníes.** Los precios reales de China los va a cargar el
     dueño solo cuando los tenga (la app queda lista; nada pre-cargado).
-  - Sub-fases de construcción: C1 Gastos+Personal → C2 Stock+Compras →
-    C3 Ventas+Garantías+Trabajos → C4 Finanzas → C5 integraciones
-    (respaldos con todo lo nuevo, Ajustes, seed demo, reset, popstate,
-    bump de sw.js).
+  - Sub-fases de construcción: **C1 Gastos+Personal: HECHA** (ver sección 4) →
+    C2 Stock+Compras → C3 Ventas+Garantías+Trabajos → C4 Finanzas →
+    C5 integraciones (respaldos con todo lo nuevo, Ajustes, seed demo, reset,
+    popstate, bump de sw.js).

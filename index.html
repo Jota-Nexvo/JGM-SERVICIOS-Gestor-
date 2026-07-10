@@ -112,6 +112,14 @@
         <div id="regmes-content" class="stack-lg"></div>
       </section>
 
+      <section class="screen" id="screen-gastos">
+        <div id="gastos-content" class="stack-lg"></div>
+      </section>
+
+      <section class="screen" id="screen-personal">
+        <div id="personal-content" class="stack-lg"></div>
+      </section>
+
       <section class="screen" id="screen-ajustes">
         <div id="ajustes-content" class="stack-lg"></div>
         <input type="file" id="import-input" accept=".json,application/json" hidden>
@@ -316,6 +324,87 @@
           <div class="modal-actions">
             <button type="button" class="btn-cancel" id="pp-cancel">Cancelar</button>
             <button type="button" class="btn-save" id="pp-save">Guardar nueva fecha</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Modal gasto ===== -->
+  <div class="modal-overlay" id="modal-expense" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ef-title">
+      <div class="modal-body">
+        <div class="modal-title" id="ef-title">Registrar gasto</div>
+        <div class="form-stack">
+          <div>
+            <div class="field-label">Categoría</div>
+            <div class="chip-row" id="ef-cats"></div>
+          </div>
+          <div id="ef-sub-wrap" hidden>
+            <div class="field-label">Tipo de viático (opcional)</div>
+            <div class="chip-row" id="ef-subs"></div>
+          </div>
+          <div id="ef-staff-wrap" hidden>
+            <div class="field-label">¿A qué personal le pagaste? *</div>
+            <select id="ef-staff"><option value="">Elegir personal…</option></select>
+            <div class="set-hint" id="ef-staff-hint" hidden>Todavía no cargaste personales. Agregalos desde la pantalla «Personales».</div>
+          </div>
+          <div id="ef-job-wrap" hidden>
+            <div class="field-label">¿Por qué trabajo? (opcional)</div>
+            <select id="ef-job"><option value="">Sin trabajo asociado</option></select>
+          </div>
+          <div class="grid-2">
+            <div>
+              <div class="field-label">Fecha</div>
+              <input type="date" id="ef-date">
+            </div>
+            <div>
+              <div class="field-label">Monto (₲) *</div>
+              <input id="ef-amount" inputmode="numeric" autocomplete="off" class="mono-input" placeholder="150.000">
+            </div>
+          </div>
+          <div>
+            <div class="field-label">Nota (opcional)</div>
+            <input id="ef-note" type="text" autocomplete="off" placeholder="Ej.: nafta ida y vuelta a Pirayú">
+          </div>
+          <div class="form-err" id="ef-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="ef-cancel">Cancelar</button>
+            <button type="button" class="btn-save" id="ef-save">Guardar gasto</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Modal personal ===== -->
+  <div class="modal-overlay" id="modal-staff" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sf-title">
+      <div class="modal-body">
+        <div class="modal-title" id="sf-title">Agregar personal</div>
+        <div class="form-stack">
+          <div>
+            <div class="field-label">Nombre *</div>
+            <input id="sf-name" type="text" autocomplete="off" placeholder="Ej.: Carlos Benítez">
+          </div>
+          <div class="grid-2">
+            <div>
+              <div class="field-label">Teléfono</div>
+              <input id="sf-phone" type="tel" autocomplete="off" placeholder="Ej.: 0981 456 789">
+            </div>
+            <div>
+              <div class="field-label">C.I.</div>
+              <input id="sf-ci" type="text" autocomplete="off" placeholder="Ej.: 1.234.567-8">
+            </div>
+          </div>
+          <div>
+            <div class="field-label">Notas</div>
+            <textarea id="sf-notes" class="ta-sm" placeholder="Ej.: ayudante de perforación, vive en Luque…"></textarea>
+          </div>
+          <div class="form-err" id="sf-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="sf-cancel">Cancelar</button>
+            <button type="button" class="btn-save" id="sf-save">Guardar personal</button>
           </div>
         </div>
       </div>
