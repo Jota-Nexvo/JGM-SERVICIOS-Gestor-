@@ -735,6 +735,22 @@
     if (postModalEl.hidden) histPush();
     postModalEl.hidden = false;
   }
+  // El mismo modal sirve para posponer un mantenimiento (ppForm.maintCid)
+  function openPostMaint(cid) {
+    var c = state.data.clients.find(function (x) { return x.id === cid; });
+    if (!c || !c.maint) return;
+    ppForm = { maintCid: cid };
+    document.getElementById('pp-title').textContent = 'Posponer mantenimiento';
+    document.getElementById('pp-save').textContent = 'Guardar nueva fecha';
+    document.getElementById('pp-sub').textContent =
+      c.name + ' — mantenimiento cada ' + c.maint.months + (Number(c.maint.months) === 1 ? ' mes' : ' meses');
+    document.getElementById('pp-date').value = addDaysIso(todayIso(), 7);
+    var err = document.getElementById('pp-err');
+    err.hidden = true;
+    err.textContent = '';
+    if (postModalEl.hidden) histPush();
+    postModalEl.hidden = false;
+  }
   function closePostModal() { if (!postModalEl.hidden) { postModalEl.hidden = true; histConsume(); } }
   function submitPost() {
     var v = document.getElementById('pp-date').value;
@@ -742,6 +758,15 @@
       var err = document.getElementById('pp-err');
       err.textContent = 'Elegí la nueva fecha.';
       err.hidden = false;
+      return;
+    }
+    if (ppForm.maintCid) {
+      mutate(function (d) {
+        var c = d.clients.find(function (x) { return x.id === ppForm.maintCid; });
+        if (c && c.maint) c.maint.next = v;
+      });
+      closePostModal();
+      toast('Mantenimiento pospuesto al ' + dd(v) + '.');
       return;
     }
     var wasFijar = !ppForm.ddId;
@@ -791,12 +816,15 @@
       var key = 'jgm_lastNotif', t = todayIso();
       if (localStorage.getItem(key) === t) return;
       var u = urgentCounts();
-      if (u.venc + u.hoy === 0) return;
+      var mDue = maintAlerts().filter(function (m) { return m.diff <= 0; }).length;
+      if (u.venc + u.hoy + mDue === 0) return;
       var parts = [];
       if (u.venc) parts.push(u.venc + (u.venc === 1 ? ' cobro vencido' : ' cobros vencidos'));
       if (u.hoy) parts.push(u.hoy + ' para hoy');
+      if (mDue) parts.push(mDue + (mDue === 1 ? ' mantenimiento pendiente' : ' mantenimientos pendientes'));
+      var partsTxt = parts.length > 1 ? parts.slice(0, -1).join(', ') + ' y ' + parts[parts.length - 1] : parts[0];
       showNotif('JGM SERVICIOS — Cobros', {
-        body: 'Tenés ' + parts.join(' y ') + '. Abrí la app para ver los detalles.',
+        body: 'Tenés ' + partsTxt + '. Abrí la app para ver los detalles.',
         icon: 'assets/icon-192.png', badge: 'assets/icon-192.png', tag: 'jgm-cobros'
       });
       localStorage.setItem(key, t);
@@ -827,6 +855,61 @@
     return (state.data.jobs || []).filter(function (j) {
       return j.credit && jobBalance(j) > 0 && !(j.dueDates || []).some(function (x) { return !x.done; });
     });
+  }
+
+  // ===== Mantenimiento periódico por cliente =====
+  // client.maint = { months, next } — sin el campo, el cliente no tiene recordatorio.
+  function addMonthsIso(iso, months) {
+    var p = iso.split('-').map(Number);
+    return localIso(new Date(p[0], p[1] - 1 + months, p[2]));
+  }
+  // Mantenimientos vencidos, de hoy o dentro del aviso anticipado global
+  function maintAlerts() {
+    var today = todayIso();
+    var remind = Number(state.data.settings.remindDays) || 0;
+    return (state.data.clients || [])
+      .filter(function (c) { return c.maint && c.maint.next; })
+      .map(function (c) { return { c: c, diff: daysBetween(today, c.maint.next) }; })
+      .filter(function (m) { return m.diff <= remind; })
+      .sort(function (a, b) { return a.diff - b.diff; });
+  }
+  function maintDiffLabel(diff) {
+    if (diff < 0) { var n = Math.abs(diff); return 'venció hace ' + n + (n === 1 ? ' día' : ' días'); }
+    if (diff === 0) return 'es para hoy';
+    return 'en ' + diff + (diff === 1 ? ' día' : ' días');
+  }
+  function setMaint(cid, months) {
+    var next = addMonthsIso(todayIso(), months);
+    mutate(function (d) {
+      var c = d.clients.find(function (x) { return x.id === cid; });
+      if (c) c.maint = { months: months, next: next };
+    });
+    toast('Recordatorio activado: cada ' + months + (months === 1 ? ' mes' : ' meses') + ' · próximo ' + dd(next) + '.');
+  }
+  function askMaintMonths(cid) {
+    var v = window.prompt('¿Cada cuántos meses hay que hacer el mantenimiento?', '6');
+    if (v == null) return;
+    var n = parseInt(String(v).replace(/\D/g, ''), 10);
+    if (!n || n < 1 || n > 60) { toast('Cargá un número de meses válido (de 1 a 60).'); return; }
+    setMaint(cid, n);
+  }
+  function maintDone(cid) {
+    var nextTxt = '';
+    mutate(function (d) {
+      var c = d.clients.find(function (x) { return x.id === cid; });
+      if (c && c.maint) {
+        c.maint.next = addMonthsIso(todayIso(), Number(c.maint.months) || 6);
+        nextTxt = c.maint.next;
+      }
+    });
+    if (nextTxt) { vib(30); toast('Mantenimiento registrado. Próximo: ' + dd(nextTxt) + '.'); }
+  }
+  function clearMaint(cid) {
+    mutate(function (d) {
+      var c = d.clients.find(function (x) { return x.id === cid; });
+      if (c) delete c.maint;
+    });
+    toast('Recordatorio de mantenimiento quitado.');
   }
 
   // ===== WhatsApp =====
@@ -1141,6 +1224,29 @@
     }
     html += '</div>';
 
+    // Mantenimiento periódico
+    html += '<div class="info-card"><div class="job-detail-label">Mantenimiento</div>';
+    if (c.maint && c.maint.next) {
+      var mDiff = daysBetween(todayIso(), c.maint.next);
+      var mCls = mDiff < 0 ? 'venc' : mDiff === 0 ? 'hoy' : '';
+      html += '<div class="maint-status ' + mCls + '">Cada ' + esc(c.maint.months) +
+        (Number(c.maint.months) === 1 ? ' mes' : ' meses') + ' · próximo <b>' + esc(dd(c.maint.next)) + '</b> (' +
+        esc(maintDiffLabel(mDiff)) + ')</div>' +
+        '<div class="loc-actions">' +
+        '<button type="button" class="loc-btn primary" data-maint-done="' + esc(c.id) + '">✓ Hecho</button>' +
+        '<button type="button" class="loc-btn" data-maint-post="' + esc(c.id) + '">Posponer</button>' +
+        '<button type="button" class="loc-btn danger" data-maint-off="' + esc(c.id) + '">' +
+        (state.confirmKey === 'delmaint:' + c.id ? '¿Seguro?' : 'Quitar') + '</button></div>';
+    } else {
+      html += '<div class="loc-empty">Sin recordatorio. Elegí cada cuánto revisar este pozo o equipo:</div>' +
+        '<div class="loc-actions">' +
+        '<button type="button" class="loc-btn" data-maint-set="3">Cada 3 meses</button>' +
+        '<button type="button" class="loc-btn" data-maint-set="6">Cada 6 meses</button>' +
+        '<button type="button" class="loc-btn" data-maint-set="12">Cada 12 meses</button>' +
+        '<button type="button" class="loc-btn" data-maint-set="0">Otro…</button></div>';
+    }
+    html += '</div>';
+
     // Fotos del lugar (del cliente, independientes de los trabajos)
     html += '<div class="info-card"><div class="job-detail-label">Fotos del lugar</div><div class="photo-grid">';
     (c.photos || []).forEach(function (p, i) {
@@ -1205,6 +1311,24 @@
     if (remindBtn) remindBtn.addEventListener('click', function () { openWaRemind(c.id); });
     var stmtBtn = box.querySelector('.js-client-statement');
     if (stmtBtn) stmtBtn.addEventListener('click', function () { shareStatement(c.id); });
+    box.querySelectorAll('[data-maint-set]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var n = Number(el.getAttribute('data-maint-set'));
+        if (n) setMaint(c.id, n); else askMaintMonths(c.id);
+      });
+    });
+    box.querySelectorAll('[data-maint-done]').forEach(function (el) {
+      el.addEventListener('click', function () { maintDone(el.getAttribute('data-maint-done')); });
+    });
+    box.querySelectorAll('[data-maint-post]').forEach(function (el) {
+      el.addEventListener('click', function () { openPostMaint(el.getAttribute('data-maint-post')); });
+    });
+    box.querySelectorAll('[data-maint-off]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var id = el.getAttribute('data-maint-off');
+        confirm2('delmaint:' + id, function () { clearMaint(id); });
+      });
+    });
     box.querySelectorAll('[data-toggle-job]').forEach(function (el) {
       el.addEventListener('click', function () {
         var id = el.getAttribute('data-toggle-job');
@@ -1336,6 +1460,15 @@
         : 'Hace ' + dsbI + ' días que no guardás copia. Guardala para no perder tus datos si perdés el teléfono.';
       html += '<div class="backup-banner"><span>' + esc(bmsg) + '</span>' +
         '<button type="button" class="js-backup-now">Guardar copia</button></div>';
+    }
+    // aviso de mantenimientos vencidos o para hoy
+    var maintDue = maintAlerts().filter(function (m) { return m.diff <= 0; });
+    if (maintDue.length) {
+      var mMsg = maintDue.length === 1
+        ? 'Mantenimiento pendiente: ' + maintDue[0].c.name + ' (' + maintDiffLabel(maintDue[0].diff) + ').'
+        : 'Tenés ' + maintDue.length + ' mantenimientos vencidos o para hoy.';
+      html += '<div class="maint-banner"><span>🔧 ' + esc(mMsg) + '</span>' +
+        '<button type="button" data-go="cobros">Ver</button></div>';
     }
     html += '<div class="stat-grid">' +
       '<div class="stat-tot"><div class="stat-tot-label">Total por cobrar</div>' +
@@ -1596,6 +1729,7 @@
     state.data.clients.forEach(function (c) { cById[c.id] = c; });
     var alerts = buildAlerts();
     var sin = jobsSinFecha();
+    var maints = maintAlerts();
     var perm = notifPerm();
     var html = '';
 
@@ -1604,7 +1738,7 @@
         '<button type="button" class="js-notif-on">Activar</button></div>';
     }
 
-    if (!alerts.length && !sin.length) {
+    if (!alerts.length && !sin.length && !maints.length) {
       html += '<div class="cobros-empty"><div class="cobros-empty-title">No hay cobros pendientes</div>' +
         '<div class="cobros-empty-text">Cuando cargues trabajos a crédito con fecha de cobro, van a aparecer acá.</div></div>';
     }
@@ -1635,6 +1769,22 @@
       html += '<div class="section-label ' + g.cls + '">' + g.label + ' · ' + list.length + '</div>';
       html += list.map(function (a) { return alertCard(a, g.card); }).join('');
     });
+
+    if (maints.length) {
+      html += '<div class="section-label teal">Mantenimientos · ' + maints.length + '</div>';
+      html += maints.map(function (m) {
+        return '<div class="maint-card' + (m.diff < 0 ? ' venc' : '') + '">' +
+          '<div class="alert-top"><span class="maint-chip">🔧 Mantenimiento</span>' +
+          '<span class="alert-date">' + esc(maintDiffLabel(m.diff)) + ' · ' + esc(ddShort(m.c.maint.next)) + '</span></div>' +
+          '<div class="alert-client" data-alert-open="' + esc(m.c.id) + '">' + esc(m.c.name) + '</div>' +
+          '<div class="alert-desc">Cada ' + esc(m.c.maint.months) + (Number(m.c.maint.months) === 1 ? ' mes' : ' meses') +
+          (m.c.address ? ' · ' + esc(m.c.address) : '') + '</div>' +
+          '<div class="alert-actions">' +
+          '<button type="button" class="btn-pay" data-maint-done="' + esc(m.c.id) + '">✓ Hecho</button>' +
+          '<button type="button" class="btn-ghost" data-maint-post="' + esc(m.c.id) + '">Posponer</button>' +
+          '</div></div>';
+      }).join('');
+    }
 
     var fut = alerts.filter(function (a) { return a.group === 'fut'; });
     if (fut.length) {
@@ -1678,6 +1828,12 @@
     });
     box.querySelectorAll('[data-sin-post]').forEach(function (el) {
       el.addEventListener('click', function () { openPost(el.getAttribute('data-sin-post'), null); });
+    });
+    box.querySelectorAll('[data-maint-done]').forEach(function (el) {
+      el.addEventListener('click', function () { maintDone(el.getAttribute('data-maint-done')); });
+    });
+    box.querySelectorAll('[data-maint-post]').forEach(function (el) {
+      el.addEventListener('click', function () { openPostMaint(el.getAttribute('data-maint-post')); });
     });
   }
 

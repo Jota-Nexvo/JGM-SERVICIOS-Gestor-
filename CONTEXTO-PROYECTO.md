@@ -171,6 +171,28 @@ Fases del plan original (todas hechas):
   al desbloquear con el PIN.
 - Cache del service worker: `jgm-gestor-v2` → `jgm-gestor-v3`.
 
+### Etapa B de la ampliación (2026-07-10) — Mantenimiento periódico
+
+- **Modelo**: campo opcional `client.maint = { months, next }` (sin el campo =
+  sin recordatorio; compatible hacia atrás, viaja en los respaldos dentro de
+  `clients` sin cambios de estructura).
+- **Ficha del cliente**: bloque "Mantenimiento" (entre Ubicación y Fotos del
+  lugar). Sin recordatorio → botones "Cada 3/6/12 meses" y "Otro…" (prompt de
+  meses, 1–60). Activo → estado "Cada X meses · próximo dd/mm/aaaa (en N
+  días / es para hoy / venció hace N días)" + acciones **✓ Hecho** (recalcula
+  `next = hoy + months`), **Posponer** (reutiliza el modal de posponer, ahora
+  generalizado con `ppForm.maintCid`) y **Quitar** (doble toque).
+- **Cobros**: sección "Mantenimientos · N" (tarjetas `maint-card` verdosas con
+  chip 🔧, borde rojo si venció) con ✓ Hecho y Posponer. Aparecen los vencidos,
+  de hoy y dentro del aviso anticipado global (`remindDays`).
+- **Inicio**: banner turquesa si hay mantenimientos vencidos o de hoy (1 → con
+  nombre; varios → contador), botón "Ver" → Cobros.
+- **Notificación diaria**: ahora suma "N mantenimiento(s) pendiente(s)" al
+  texto (función `maybeNotify`).
+- Funciones clave en `js/app.js`: `addMonthsIso`, `maintAlerts`,
+  `maintDiffLabel`, `setMaint`, `askMaintMonths`, `maintDone`, `clearMaint`,
+  `openPostMaint`.
+
 ## 5. Modelo de datos
 
 Clave de `localStorage`: **`jgm_gestor_v1`**. Estructura:
@@ -320,10 +342,7 @@ con stock**. Todas las decisiones de abajo fueron consultadas y respondidas
 por el dueño — no re-preguntar.
 
 - **Etapa A — Cobranza más fácil: HECHA** (ver sección 4).
-- **Etapa B — Mantenimiento periódico** (pendiente): `client.maint =
-  { months, next }`; bloque en la ficha (activar, intervalo 3/6/12 meses,
-  "Hecho" recalcula, "Posponer"); visible en Cobros (chip Mantenimiento),
-  Inicio y notificaciones.
+- **Etapa B — Mantenimiento periódico: HECHA** (ver sección 4).
 - **Etapa C — Stock, Ventas, Gastos y Finanzas** (pendiente), decisiones:
   - **Motor y bomba = productos separados** en el catálogo (cada uno con
     stock, costo y precio). Al vender se elige **motor / bomba / ambas**
