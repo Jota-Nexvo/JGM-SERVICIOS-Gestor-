@@ -66,6 +66,7 @@
   // ===== Datos =====
   function defaultCats() { return ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro']; }
   function defaultExpenseCats() { return ['Movilidad', 'Combustible', 'Viáticos', 'Personal', 'Productos/Materiales', 'Otro']; }
+  function defaultProductCats() { return ['Motor', 'Bomba', 'Relé', 'Repuesto', 'Otro']; }
   var VIATICO_SUBS = ['Desayuno', 'Almuerzo', 'Cena', 'Hospedaje'];
   // Arranque en blanco: la app empieza vacía para cargar datos reales.
   function seedData() {
@@ -74,7 +75,9 @@
       jobs: [],
       expenses: [],
       staff: [],
-      settings: { categories: defaultCats(), expenseCategories: defaultExpenseCats(), remindDays: 3, notifEnabled: false, devices: [] },
+      products: [],
+      purchases: [],
+      settings: { categories: defaultCats(), expenseCategories: defaultExpenseCats(), productCategories: defaultProductCats(), remindDays: 3, notifEnabled: false, devices: [] },
       demo: false
     };
   }
@@ -109,12 +112,35 @@
       { id: 'e4', date: d(-8), category: 'Productos/Materiales', subtype: '', amount: 700000, note: 'Caños y abrazaderas', staffId: '', jobId: 'j3', photos: [] },
       { id: 'e5', date: d(-2), category: 'Movilidad', subtype: '', amount: 120000, note: 'Flete del equipo', staffId: '', jobId: '', photos: [] }
     ];
+    var products = [
+      { id: 'pr1', name: 'Motor sumergible 1.5 HP (ejemplo)', category: 'Motor', notes: '', photos: [], cost: 1250000, price: 1900000, stock: 4, minStock: 1, adjusts: [] },
+      { id: 'pr2', name: 'Bomba sumergible 1.5 HP (ejemplo)', category: 'Bomba', notes: '', photos: [], cost: 750000, price: 1200000, stock: 4, minStock: 1, adjusts: [{ id: 'aj1', date: d(-10), qty: 1, reason: 'Llegó con el cuerpo rajado' }] },
+      { id: 'pr3', name: 'Relé falta de fase (ejemplo)', category: 'Relé', notes: '', photos: [], cost: 125000, price: 220000, stock: 1, minStock: 2, adjusts: [] }
+    ];
+    var purchases = [
+      {
+        id: 'cp1', type: 'import', status: 'received', paidDate: d(-45), receivedDate: d(-12),
+        note: 'Primer lote de China (ejemplo)', paidAmount: 12000000, totalFinal: 15000000,
+        items: [
+          { productId: 'pr1', qty: 5, unitBase: 1000000, unitCost: 1250000 },
+          { productId: 'pr2', qty: 5, unitBase: 600000, unitCost: 750000 },
+          { productId: 'pr3', qty: 20, unitBase: 100000, unitCost: 125000 }
+        ]
+      },
+      {
+        id: 'cp2', type: 'import', status: 'paid', paidDate: d(-3), receivedDate: '',
+        note: 'Pedido en viaje (ejemplo)', paidAmount: 3000000, totalFinal: 0,
+        items: [{ productId: 'pr3', qty: 30, unitBase: 100000 }]
+      }
+    ];
     return {
       clients: clients,
       jobs: jobs,
       expenses: expenses,
       staff: staff,
-      settings: { categories: defaultCats(), expenseCategories: defaultExpenseCats(), remindDays: 3, notifEnabled: false, devices: [] },
+      products: products,
+      purchases: purchases,
+      settings: { categories: defaultCats(), expenseCategories: defaultExpenseCats(), productCategories: defaultProductCats(), remindDays: 3, notifEnabled: false, devices: [] },
       demo: true
     };
   }
@@ -124,9 +150,12 @@
   function normalizeData(d) {
     if (!Array.isArray(d.expenses)) d.expenses = [];
     if (!Array.isArray(d.staff)) d.staff = [];
+    if (!Array.isArray(d.products)) d.products = [];
+    if (!Array.isArray(d.purchases)) d.purchases = [];
     if (!Array.isArray(d.settings.devices)) d.settings.devices = [];
     if (!Array.isArray(d.settings.categories)) d.settings.categories = defaultCats();
     if (!Array.isArray(d.settings.expenseCategories)) d.settings.expenseCategories = defaultExpenseCats();
+    if (!Array.isArray(d.settings.productCategories)) d.settings.productCategories = defaultProductCats();
     return d;
   }
   function persist(data) {
@@ -216,10 +245,11 @@
     });
   }
   function loadJobPhotos(j) { loadPhotos(j.photos); }
-  // Devuelve el objeto (trabajo, cliente o gasto) dueño de las fotos
+  // Devuelve el objeto (trabajo, cliente, gasto o producto) dueño de las fotos
   function photoOwner(kind, id) {
     if (kind === 'client') return state.data.clients.find(function (x) { return x.id === id; });
     if (kind === 'exp') return (state.data.expenses || []).find(function (x) { return x.id === id; });
+    if (kind === 'prod') return (state.data.products || []).find(function (x) { return x.id === id; });
     return state.data.jobs.find(function (x) { return x.id === id; });
   }
   function imgFromFile(file) {
@@ -266,6 +296,7 @@
       mutate(function (d) {
         var o = kind === 'client' ? d.clients.find(function (x) { return x.id === id; })
           : kind === 'exp' ? (d.expenses || []).find(function (x) { return x.id === id; })
+          : kind === 'prod' ? (d.products || []).find(function (x) { return x.id === id; })
           : d.jobs.find(function (x) { return x.id === id; });
         if (o) o.photos = (o.photos || []).concat(entries);
       });
@@ -332,6 +363,9 @@
       regmes: ['Detalle del mes', state.regMonth ? (monthName(state.regMonth) + ' ' + state.regMonth.slice(0, 4)) : ''],
       gastos: ['Gastos', 'Gastos del negocio'],
       personal: ['Personales', 'Tu equipo de trabajo'],
+      stock: ['Stock', 'Productos para la venta'],
+      producto: ['Producto', ''],
+      compras: ['Compras', 'Pedidos e ingresos de mercadería'],
       ajustes: ['Ajustes', 'Configuración y respaldo']
     };
   }
@@ -355,7 +389,7 @@
   }
   function viewDepthOf(v) {
     if (v === 'inicio') return 0;
-    if (v === 'cliente' || v === 'regmes' || v === 'gastos') return 2;
+    if (v === 'cliente' || v === 'regmes' || v === 'gastos' || v === 'producto' || v === 'compras') return 2;
     if (v === 'personal') return 3; // se entra desde Gastos
     return 1;
   }
@@ -405,8 +439,12 @@
     render();
     window.scrollTo(0, 0);
   }
-  function goClient(id) {
-    syncViewHistory('cliente');
+  // reuseHist=true: la entrada de historial ya existente (p. ej. la del modal
+  // que se acaba de ocultar) pasa a representar esta vista. Evita la carrera
+  // entre el history.go(-1) asíncrono del cierre y el pushState de navegar,
+  // que desfasaba el historial y hacía que "atrás" pudiera salir de la app.
+  function goClient(id, reuseHist) {
+    if (reuseHist) curViewDepth = viewDepthOf('cliente'); else syncViewHistory('cliente');
     state.view = 'cliente';
     state.clientId = id;
     state.expandedJobId = null;
@@ -418,6 +456,14 @@
     syncViewHistory('regmes');
     state.view = 'regmes';
     state.regMonth = ym;
+    state.confirmKey = null;
+    render();
+    window.scrollTo(0, 0);
+  }
+  function goProduct(id, reuseHist) {
+    if (reuseHist) curViewDepth = viewDepthOf('producto'); else syncViewHistory('producto');
+    state.view = 'producto';
+    state.productId = id;
     state.confirmKey = null;
     render();
     window.scrollTo(0, 0);
@@ -465,10 +511,13 @@
         d.clients.push({ id: newId, name: name, phone: phone, address: address, ci: ci, notes: notes });
       }
     });
-    closeClientModal();
     if (isNew && newId) {
-      goClient(newId);
+      // el modal se oculta y su entrada de historial pasa a ser la de la ficha
+      modalEl.hidden = true;
+      goClient(newId, true);
       toast('Cliente guardado.');
+    } else {
+      closeClientModal();
     }
   }
 
@@ -984,6 +1033,410 @@
       d.staff = (d.staff || []).filter(function (s) { return s.id !== id; });
     });
     toast('Personal eliminado. Sus pagos registrados se conservan.');
+  }
+
+  // ===== Stock: helpers =====
+  function productById(id) { return (state.data.products || []).find(function (x) { return x.id === id; }); }
+  function lowStockProducts() {
+    return (state.data.products || []).filter(function (p) {
+      return (Number(p.minStock) || 0) > 0 && (Number(p.stock) || 0) <= (Number(p.minStock) || 0);
+    });
+  }
+  function inventoryValue() {
+    return (state.data.products || []).reduce(function (a, p) {
+      return a + (Number(p.stock) || 0) * (Number(p.cost) || 0);
+    }, 0);
+  }
+  function pendingPurchases() {
+    return (state.data.purchases || []).filter(function (b) { return b.status === 'paid'; });
+  }
+  // Aplica una compra al stock: promedio ponderado del costo + suma unidades.
+  // Cada item ya debe traer su unitCost (real, con prorrateo si es importación).
+  function applyPurchaseToStock(d, purchase) {
+    (purchase.items || []).forEach(function (it) {
+      var p = (d.products || []).find(function (x) { return x.id === it.productId; });
+      if (!p) return;
+      var oldStock = Number(p.stock) || 0;
+      var oldCost = Number(p.cost) || 0;
+      var qty = Number(it.qty) || 0;
+      var unitCost = Number(it.unitCost) || 0;
+      if (qty <= 0) return;
+      p.cost = oldStock + qty > 0 ? ((oldStock * oldCost) + (qty * unitCost)) / (oldStock + qty) : unitCost;
+      p.stock = oldStock + qty;
+    });
+  }
+
+  // ===== Modal producto =====
+  var prodModalEl = document.getElementById('modal-product');
+  var prForm = {};
+  function renderProdCats() {
+    var box = document.getElementById('prf-cats');
+    var cats = state.data.settings.productCategories || defaultProductCats();
+    box.innerHTML = cats.map(function (name) {
+      return '<span class="cat-chip' + (prForm.category === name ? ' active' : '') + '" data-pcat="' + esc(name) + '">' + esc(name) + '</span>';
+    }).join('');
+    box.querySelectorAll('[data-pcat]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        prForm.category = el.getAttribute('data-pcat');
+        renderProdCats();
+      });
+    });
+  }
+  function openProductModal(p) {
+    prForm = { id: p ? p.id : null, category: p ? p.category : (state.data.settings.productCategories || defaultProductCats())[0] };
+    document.getElementById('prf-title').textContent = p ? 'Editar producto' : 'Nuevo producto';
+    document.getElementById('prf-save').textContent = p ? 'Guardar cambios' : 'Guardar producto';
+    document.getElementById('prf-name').value = p ? p.name : '';
+    document.getElementById('prf-price').value = p && p.price ? dots(p.price) : '';
+    document.getElementById('prf-min').value = p ? String(p.minStock || 0) : '1';
+    document.getElementById('prf-notes').value = p ? (p.notes || '') : '';
+    var err = document.getElementById('prf-err');
+    err.hidden = true;
+    err.textContent = '';
+    renderProdCats();
+    if (prodModalEl.hidden) histPush();
+    prodModalEl.hidden = false;
+    document.getElementById('prf-name').focus();
+  }
+  function closeProductModal() { if (!prodModalEl.hidden) { prodModalEl.hidden = true; histConsume(); } }
+  function submitProduct() {
+    var name = document.getElementById('prf-name').value.trim();
+    if (!name) {
+      var err = document.getElementById('prf-err');
+      err.textContent = 'El nombre es obligatorio.';
+      err.hidden = false;
+      return;
+    }
+    var price = parseMoney(document.getElementById('prf-price').value);
+    var minStock = Math.max(0, Math.min(999, Number(document.getElementById('prf-min').value) || 0));
+    var notes = document.getElementById('prf-notes').value;
+    var isNew = !prForm.id;
+    var newId = null;
+    mutate(function (d) {
+      if (prForm.id) {
+        var p = d.products.find(function (x) { return x.id === prForm.id; });
+        if (p) { p.name = name; p.category = prForm.category; p.price = price; p.minStock = minStock; p.notes = notes; }
+      } else {
+        newId = uid();
+        d.products.push({ id: newId, name: name, category: prForm.category, notes: notes, photos: [], cost: 0, price: price, stock: 0, minStock: minStock, adjusts: [] });
+      }
+    });
+    if (isNew && newId) {
+      // el modal se oculta y su entrada de historial pasa a ser la de la ficha
+      prodModalEl.hidden = true;
+      goProduct(newId, true);
+      toast('Producto guardado. El stock entra con las compras.');
+    } else {
+      closeProductModal();
+      toast('Producto actualizado.');
+    }
+  }
+  function delProduct(id) {
+    var p = productById(id);
+    if (p) delOwnerPhotos(p);
+    mutate(function (d) {
+      d.products = (d.products || []).filter(function (x) { return x.id !== id; });
+    });
+    go('stock');
+    toast('Producto eliminado. Las compras registradas se conservan.');
+  }
+
+  // ===== Modal compra (importación en 2 pasos / compra local) =====
+  var purModalEl = document.getElementById('modal-purchase');
+  var buForm = {};
+  function productOptions(selId) {
+    var prods = (state.data.products || []).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+    return '<option value="">Elegir producto…</option>' + prods.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (selId === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>';
+    }).join('');
+  }
+  function purchaseSum() {
+    return (buForm.items || []).reduce(function (a, it) {
+      if (it.kind === 'set') return a + (Number(it.qty) || 0) * (Number(it.setPrice) || 0);
+      return a + (Number(it.qty) || 0) * (Number(it.unitBase) || 0);
+    }, 0);
+  }
+  function renderPurchaseForm() {
+    document.getElementById('buf-import').classList.toggle('active', buForm.type === 'import');
+    document.getElementById('buf-local').classList.toggle('active', buForm.type === 'local');
+    document.getElementById('buf-date-label').textContent = buForm.type === 'import' ? 'Fecha del pago' : 'Fecha de compra';
+    document.getElementById('buf-items-label').textContent = buForm.type === 'import' ? 'Productos del pedido (precio base de China c/u)' : 'Productos comprados (costo c/u)';
+    document.getElementById('buf-sum-label').textContent = buForm.type === 'import' ? 'Suma base del pedido' : 'Total de la compra';
+    document.getElementById('buf-paid-wrap').style.display = buForm.type === 'import' ? '' : 'none';
+    document.getElementById('buf-hint').style.display = buForm.type === 'import' ? '' : 'none';
+    document.getElementById('buf-save').textContent = buForm.type === 'import' ? 'Guardar pedido (pagué)' : 'Guardar compra';
+
+    var box = document.getElementById('buf-items');
+    var html = '';
+    (buForm.items || []).forEach(function (it, i) {
+      if (it.kind === 'set') {
+        var bombaPart = Math.max(0, (Number(it.setPrice) || 0) - (Number(it.motorPart) || 0));
+        html += '<div class="bu-set"><div class="bu-set-head"><span>Conjunto motor + bomba</span>' +
+          '<button type="button" class="bu-rm" data-bu-rm="' + i + '">✕</button></div>' +
+          '<div class="bu-grid"><select data-bu-set-motor="' + i + '">' + productOptions(it.motorId) + '</select>' +
+          '<select data-bu-set-bomba="' + i + '">' + productOptions(it.bombaId) + '</select></div>' +
+          '<div class="bu-grid3">' +
+          '<label>Conjuntos<input type="number" min="1" max="999" value="' + esc(String(it.qty || 1)) + '" data-bu-set-qty="' + i + '"></label>' +
+          '<label>Precio conjunto<input inputmode="numeric" class="mono-input" value="' + (it.setPrice ? esc(dots(it.setPrice)) : '') + '" placeholder="1.600.000" data-bu-set-price="' + i + '"></label>' +
+          '<label>Parte del motor<input inputmode="numeric" class="mono-input" value="' + (it.motorPart ? esc(dots(it.motorPart)) : '') + '" placeholder="1.000.000" data-bu-set-motor-part="' + i + '"></label>' +
+          '</div>' +
+          '<div class="bu-set-foot">Parte de la bomba: <span class="mono">' + esc(fmtG(bombaPart)) + '</span> (se calcula sola)</div></div>';
+      } else {
+        html += '<div class="bu-item">' +
+          '<select data-bu-prod="' + i + '">' + productOptions(it.productId) + '</select>' +
+          '<input type="number" min="1" max="999" value="' + esc(String(it.qty || 1)) + '" data-bu-qty="' + i + '" aria-label="Cantidad">' +
+          '<input inputmode="numeric" class="mono-input" value="' + (it.unitBase ? esc(dots(it.unitBase)) : '') + '" placeholder="₲ c/u" data-bu-unit="' + i + '" aria-label="Precio unitario">' +
+          '<button type="button" class="bu-rm" data-bu-rm="' + i + '">✕</button></div>';
+      }
+    });
+    if (!(buForm.items || []).length) {
+      html = '<div class="set-hint">Agregá al menos un producto (o un conjunto motor+bomba).</div>';
+    }
+    box.innerHTML = html;
+    document.getElementById('buf-sum').textContent = fmtG(purchaseSum());
+
+    box.querySelectorAll('[data-bu-rm]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        buForm.items.splice(Number(el.getAttribute('data-bu-rm')), 1);
+        renderPurchaseForm();
+      });
+    });
+    box.querySelectorAll('[data-bu-prod]').forEach(function (el) {
+      el.addEventListener('change', function () { buForm.items[Number(el.getAttribute('data-bu-prod'))].productId = el.value; });
+    });
+    box.querySelectorAll('[data-bu-qty]').forEach(function (el) {
+      el.addEventListener('input', function () {
+        buForm.items[Number(el.getAttribute('data-bu-qty'))].qty = Number(el.value) || 0;
+        document.getElementById('buf-sum').textContent = fmtG(purchaseSum());
+      });
+    });
+    box.querySelectorAll('[data-bu-unit]').forEach(function (el) {
+      el.addEventListener('input', function () {
+        var n = parseMoney(el.value);
+        el.value = n ? dots(n) : '';
+        buForm.items[Number(el.getAttribute('data-bu-unit'))].unitBase = n;
+        document.getElementById('buf-sum').textContent = fmtG(purchaseSum());
+      });
+    });
+    box.querySelectorAll('[data-bu-set-motor]').forEach(function (el) {
+      el.addEventListener('change', function () { buForm.items[Number(el.getAttribute('data-bu-set-motor'))].motorId = el.value; });
+    });
+    box.querySelectorAll('[data-bu-set-bomba]').forEach(function (el) {
+      el.addEventListener('change', function () { buForm.items[Number(el.getAttribute('data-bu-set-bomba'))].bombaId = el.value; });
+    });
+    box.querySelectorAll('[data-bu-set-qty]').forEach(function (el) {
+      el.addEventListener('input', function () {
+        buForm.items[Number(el.getAttribute('data-bu-set-qty'))].qty = Number(el.value) || 0;
+        document.getElementById('buf-sum').textContent = fmtG(purchaseSum());
+      });
+    });
+    box.querySelectorAll('[data-bu-set-price]').forEach(function (el) {
+      el.addEventListener('input', function () {
+        var i = Number(el.getAttribute('data-bu-set-price'));
+        var n = parseMoney(el.value);
+        el.value = n ? dots(n) : '';
+        buForm.items[i].setPrice = n;
+        document.getElementById('buf-sum').textContent = fmtG(purchaseSum());
+        var foot = el.closest('.bu-set').querySelector('.bu-set-foot .mono');
+        foot.textContent = fmtG(Math.max(0, n - (Number(buForm.items[i].motorPart) || 0)));
+      });
+    });
+    box.querySelectorAll('[data-bu-set-motor-part]').forEach(function (el) {
+      el.addEventListener('input', function () {
+        var i = Number(el.getAttribute('data-bu-set-motor-part'));
+        var n = parseMoney(el.value);
+        el.value = n ? dots(n) : '';
+        buForm.items[i].motorPart = n;
+        var foot = el.closest('.bu-set').querySelector('.bu-set-foot .mono');
+        foot.textContent = fmtG(Math.max(0, (Number(buForm.items[i].setPrice) || 0) - n));
+      });
+    });
+  }
+  function openPurchaseModal() {
+    if (!(state.data.products || []).length) {
+      toast('Primero cargá al menos un producto en el catálogo.');
+      openProductModal(null);
+      return;
+    }
+    buForm = { type: 'import', items: [{ kind: 'item', productId: '', qty: 1, unitBase: 0 }] };
+    document.getElementById('buf-date').value = todayIso();
+    document.getElementById('buf-paid').value = '';
+    document.getElementById('buf-note').value = '';
+    var err = document.getElementById('buf-err');
+    err.hidden = true;
+    err.textContent = '';
+    renderPurchaseForm();
+    if (purModalEl.hidden) histPush();
+    purModalEl.hidden = false;
+  }
+  function closePurchaseModal() { if (!purModalEl.hidden) { purModalEl.hidden = true; histConsume(); } }
+  function buErr(msg) {
+    var err = document.getElementById('buf-err');
+    err.textContent = msg;
+    err.hidden = false;
+  }
+  // Convierte las filas del formulario (items y conjuntos) a items planos {productId, qty, unitBase}
+  function flattenPurchaseItems() {
+    var out = [];
+    var bad = null;
+    (buForm.items || []).forEach(function (it) {
+      if (bad) return;
+      if (it.kind === 'set') {
+        var setPrice = Number(it.setPrice) || 0;
+        var motorPart = Number(it.motorPart) || 0;
+        if (!it.motorId || !it.bombaId) { bad = 'En el conjunto: elegí el producto del motor y el de la bomba.'; return; }
+        if (it.motorId === it.bombaId) { bad = 'En el conjunto: el motor y la bomba tienen que ser productos distintos.'; return; }
+        if (!(Number(it.qty) > 0)) { bad = 'En el conjunto: cargá cuántos conjuntos trajiste.'; return; }
+        if (setPrice <= 0) { bad = 'En el conjunto: cargá el precio del conjunto.'; return; }
+        if (motorPart <= 0 || motorPart >= setPrice) { bad = 'En el conjunto: la parte del motor tiene que ser mayor a 0 y menor al precio del conjunto.'; return; }
+        out.push({ productId: it.motorId, qty: Number(it.qty), unitBase: motorPart });
+        out.push({ productId: it.bombaId, qty: Number(it.qty), unitBase: setPrice - motorPart });
+      } else {
+        if (!it.productId) { bad = 'Elegí el producto en todas las filas.'; return; }
+        if (!(Number(it.qty) > 0)) { bad = 'Cargá la cantidad en todas las filas.'; return; }
+        if (!(Number(it.unitBase) > 0)) { bad = 'Cargá el precio unitario en todas las filas.'; return; }
+        out.push({ productId: it.productId, qty: Number(it.qty), unitBase: Number(it.unitBase) });
+      }
+    });
+    return bad ? { error: bad } : { items: out };
+  }
+  function submitPurchase() {
+    if (!(buForm.items || []).length) { buErr('Agregá al menos un producto.'); return; }
+    var flat = flattenPurchaseItems();
+    if (flat.error) { buErr(flat.error); return; }
+    var date = document.getElementById('buf-date').value || todayIso();
+    var note = document.getElementById('buf-note').value || '';
+    var sum = flat.items.reduce(function (a, it) { return a + it.qty * it.unitBase; }, 0);
+    var isImport = buForm.type === 'import';
+    var paid = isImport ? (parseMoney(document.getElementById('buf-paid').value) || sum) : sum;
+    var purchase = {
+      id: uid(), type: buForm.type, status: isImport ? 'paid' : 'received',
+      paidDate: date, receivedDate: isImport ? '' : date, note: note,
+      paidAmount: paid, totalFinal: isImport ? 0 : sum,
+      items: flat.items.map(function (it) {
+        return isImport ? it : { productId: it.productId, qty: it.qty, unitBase: it.unitBase, unitCost: it.unitBase };
+      })
+    };
+    mutate(function (d) {
+      d.purchases.push(purchase);
+      if (!isImport) applyPurchaseToStock(d, purchase);
+    });
+    closePurchaseModal();
+    vib(30);
+    toast(isImport ? 'Pedido guardado — cuando llegue, tocá «Llegó la mercadería».' : 'Compra guardada y stock actualizado.');
+  }
+  function delPurchase(id) {
+    mutate(function (d) {
+      d.purchases = (d.purchases || []).filter(function (b) { return b.id !== id; });
+    });
+    toast('Pedido eliminado.');
+  }
+
+  // ===== Modal llegada de mercadería (paso 2 con prorrateo) =====
+  var rcvModalEl = document.getElementById('modal-receive');
+  var rcForm = {};
+  function renderReceivePreview() {
+    var b = (state.data.purchases || []).find(function (x) { return x.id === rcForm.purchaseId; });
+    if (!b) return;
+    var sumBase = (b.items || []).reduce(function (a, it) { return a + (Number(it.qty) || 0) * (Number(it.unitBase) || 0); }, 0);
+    var total = parseMoney(document.getElementById('rcf-total').value) || 0;
+    var factor = sumBase > 0 && total > 0 ? total / sumBase : 1;
+    document.getElementById('rcf-items').innerHTML = (b.items || []).map(function (it) {
+      var p = productById(it.productId);
+      var real = Math.round((Number(it.unitBase) || 0) * factor);
+      return '<div class="rcf-row"><span class="rcf-name">' + esc(p ? p.name : '(producto eliminado)') + ' × ' + esc(String(it.qty)) + '</span>' +
+        '<span class="rcf-cost mono">' + esc(fmtG(it.unitBase)) + ' → <b>' + esc(fmtG(real)) + '</b> c/u</span></div>';
+    }).join('') + '<div class="rcf-row total"><span class="rcf-name">Suma base</span><span class="rcf-cost mono">' + esc(fmtG(sumBase)) + '</span></div>';
+  }
+  function openReceiveModal(purchaseId) {
+    var b = (state.data.purchases || []).find(function (x) { return x.id === purchaseId; });
+    if (!b || b.status !== 'paid') return;
+    rcForm = { purchaseId: purchaseId };
+    document.getElementById('rcf-sub').textContent =
+      (b.note ? b.note + ' · ' : '') + 'pedido pagado el ' + dd(b.paidDate) + (b.paidAmount ? ' (' + fmtG(b.paidAmount) + ')' : '');
+    document.getElementById('rcf-date').value = todayIso();
+    document.getElementById('rcf-total').value = b.paidAmount ? dots(b.paidAmount) : '';
+    var err = document.getElementById('rcf-err');
+    err.hidden = true;
+    err.textContent = '';
+    renderReceivePreview();
+    if (rcvModalEl.hidden) histPush();
+    rcvModalEl.hidden = false;
+    document.getElementById('rcf-total').focus();
+  }
+  function closeReceiveModal() { if (!rcvModalEl.hidden) { rcvModalEl.hidden = true; histConsume(); } }
+  function submitReceive() {
+    var total = parseMoney(document.getElementById('rcf-total').value);
+    if (total <= 0) {
+      var err = document.getElementById('rcf-err');
+      err.textContent = 'Cargá el costo total final del lote.';
+      err.hidden = false;
+      return;
+    }
+    var date = document.getElementById('rcf-date').value || todayIso();
+    mutate(function (d) {
+      var b = (d.purchases || []).find(function (x) { return x.id === rcForm.purchaseId; });
+      if (!b || b.status !== 'paid') return;
+      var sumBase = (b.items || []).reduce(function (a, it) { return a + (Number(it.qty) || 0) * (Number(it.unitBase) || 0); }, 0);
+      var factor = sumBase > 0 ? total / sumBase : 1;
+      (b.items || []).forEach(function (it) { it.unitCost = (Number(it.unitBase) || 0) * factor; });
+      b.status = 'received';
+      b.receivedDate = date;
+      b.totalFinal = total;
+      applyPurchaseToStock(d, b);
+    });
+    closeReceiveModal();
+    vib(30);
+    toast('Mercadería ingresada al stock con su costo real.');
+  }
+
+  // ===== Modal ajuste de stock (merma) =====
+  var adjModalEl = document.getElementById('modal-adjust');
+  var ajForm = {};
+  function openAdjustModal(productId) {
+    var p = productById(productId);
+    if (!p) return;
+    if ((Number(p.stock) || 0) <= 0) { toast('Este producto no tiene stock para descontar.'); return; }
+    ajForm = { productId: productId };
+    document.getElementById('ajf-sub').textContent = p.name + ' — en stock: ' + (Number(p.stock) || 0);
+    document.getElementById('ajf-qty').value = '1';
+    document.getElementById('ajf-qty').max = String(Number(p.stock) || 1);
+    document.getElementById('ajf-date').value = todayIso();
+    document.getElementById('ajf-reason').value = '';
+    var err = document.getElementById('ajf-err');
+    err.hidden = true;
+    err.textContent = '';
+    if (adjModalEl.hidden) histPush();
+    adjModalEl.hidden = false;
+  }
+  function closeAdjustModal() { if (!adjModalEl.hidden) { adjModalEl.hidden = true; histConsume(); } }
+  function submitAdjust() {
+    var p = productById(ajForm.productId);
+    if (!p) { closeAdjustModal(); return; }
+    var qty = Number(document.getElementById('ajf-qty').value) || 0;
+    var reason = document.getElementById('ajf-reason').value.trim();
+    var err = document.getElementById('ajf-err');
+    if (qty < 1 || qty > (Number(p.stock) || 0)) {
+      err.textContent = 'La cantidad tiene que estar entre 1 y ' + (Number(p.stock) || 0) + '.';
+      err.hidden = false;
+      return;
+    }
+    if (!reason) {
+      err.textContent = 'Contá el motivo (queda en el historial).';
+      err.hidden = false;
+      return;
+    }
+    var date = document.getElementById('ajf-date').value || todayIso();
+    mutate(function (d) {
+      var pp = (d.products || []).find(function (x) { return x.id === ajForm.productId; });
+      if (!pp) return;
+      pp.stock = Math.max(0, (Number(pp.stock) || 0) - qty);
+      pp.adjusts = pp.adjusts || [];
+      pp.adjusts.push({ id: uid(), date: date, qty: qty, reason: reason });
+    });
+    closeAdjustModal();
+    vib(30);
+    toast('Stock ajustado: −' + qty + '. Quedó registrado como merma.');
   }
 
   // ===== Notificaciones (máx. 1/día) =====
@@ -1671,6 +2124,15 @@
       html += '<div class="maint-banner"><span>🔧 ' + esc(mMsg) + '</span>' +
         '<button type="button" data-go="cobros">Ver</button></div>';
     }
+    // aviso de stock bajo
+    var lowP = lowStockProducts();
+    if (lowP.length) {
+      var lMsg = lowP.length === 1
+        ? 'Stock bajo: ' + lowP[0].name + ' (queda' + ((Number(lowP[0].stock) || 0) === 1 ? '' : 'n') + ' ' + (Number(lowP[0].stock) || 0) + ').'
+        : 'Tenés ' + lowP.length + ' productos con stock bajo.';
+      html += '<div class="lowstock-banner"><span>⚠ ' + esc(lMsg) + '</span>' +
+        '<button type="button" data-go="stock">Ver</button></div>';
+    }
     html += '<div class="stat-grid">' +
       '<div class="stat-tot"><div class="stat-tot-label">Total por cobrar</div>' +
       '<div class="stat-tot-amount">' + esc(fmtG(tot)) + '</div>' +
@@ -1686,10 +2148,17 @@
       '<div class="mes-bar"><div class="cob" style="width:' + mesPct + '%;"></div></div></div>' +
       '</div>';
 
-    // acceso al registro mensual de ingresos
+    // accesos: registro mensual y stock
     html += '<button type="button" class="reg-open" data-go="registro">' +
       '<span class="reg-open-main"><span class="reg-open-title">Registro mensual de ingresos</span>' +
-      '<span class="reg-open-sub">Facturado y cobrado, mes por mes</span></span>' +
+      '<span class="reg-open-sub">Facturado, cobrado y gastos, mes por mes</span></span>' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>';
+    var nProds = (state.data.products || []).length;
+    var nPend = pendingPurchases().length;
+    html += '<button type="button" class="reg-open" data-go="stock">' +
+      '<span class="reg-open-main"><span class="reg-open-title">Stock y productos' +
+      (nPend ? ' · ' + nPend + ' pedido' + (nPend === 1 ? '' : 's') + ' en viaje' : '') + '</span>' +
+      '<span class="reg-open-sub">' + (nProds ? nProds + (nProds === 1 ? ' producto' : ' productos') + ' para la venta' : 'Catálogo, compras y mermas') + '</span></span>' +
       '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>';
 
     // mayores deudores
@@ -2103,6 +2572,232 @@
     });
   }
 
+  // ===== Render: Stock =====
+  function productRowHtml(p) {
+    var stock = Number(p.stock) || 0;
+    var low = (Number(p.minStock) || 0) > 0 && stock <= (Number(p.minStock) || 0);
+    var thumb = (p.photos || []).length ? (state.photoCache[p.photos[0].id] || PIXEL) : '';
+    return '<button type="button" class="prod-row" data-product="' + esc(p.id) + '">' +
+      (thumb ? '<img class="prod-thumb" alt="" src="' + esc(thumb) + '">' :
+        '<div class="prod-thumb ph"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A97B0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16v13H4z"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></div>') +
+      '<div class="prod-main"><div class="prod-name">' + esc(p.name) + '</div>' +
+      '<div class="prod-sub"><span class="prod-cat">' + esc(p.category || 'Otro') + '</span>' +
+      (p.price ? ' · venta ' + esc(fmtG(p.price)) : ' · sin precio de venta') + '</div></div>' +
+      '<div class="prod-right"><span class="prod-stock' + (low ? ' low' : '') + '">' + stock + '</span>' +
+      '<span class="prod-stock-cap">' + (low ? 'stock bajo' : 'en stock') + '</span></div></button>';
+  }
+  function renderStock() {
+    var box = document.getElementById('stock-content');
+    var prods = (state.data.products || []).slice()
+      .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+    prods.forEach(function (p) { if ((p.photos || []).length) loadPhotos([p.photos[0]]); });
+    var pend = pendingPurchases();
+    var low = lowStockProducts();
+    var html = '';
+
+    if (low.length) {
+      html += '<div class="lowstock-banner"><span>⚠ Stock bajo: ' +
+        esc(low.map(function (p) { return p.name + ' (' + (Number(p.stock) || 0) + ')'; }).join(', ')) +
+        '. Pedí a tiempo — la importación demora.</span></div>';
+    }
+
+    html += '<button type="button" class="reg-open js-goto-compras">' +
+      '<span class="reg-open-main"><span class="reg-open-title">Compras' +
+      (pend.length ? ' · ' + pend.length + ' en viaje' : '') + '</span>' +
+      '<span class="reg-open-sub">Pedidos a China y compras locales</span></span>' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>';
+
+    html += '<button type="button" class="btn-big-primary js-new-product">+ Nuevo producto</button>';
+
+    if (!prods.length) {
+      html += '<div class="dashed-card">Todavía no hay productos en el catálogo. Cargá los que vas a traer para vender (motor, bomba, relé…) y después registrá la compra para que entre el stock.</div>';
+    } else {
+      var totVal = inventoryValue();
+      html += '<div class="inv-line">Plata en stock (al costo): <span class="mono">' + esc(fmtG(totVal)) + '</span></div>';
+      html += prods.map(productRowHtml).join('');
+    }
+
+    box.innerHTML = html;
+    var comprasBtn = box.querySelector('.js-goto-compras');
+    if (comprasBtn) comprasBtn.addEventListener('click', function () { go('compras'); });
+    box.querySelector('.js-new-product').addEventListener('click', function () { openProductModal(null); });
+    box.querySelectorAll('[data-product]').forEach(function (el) {
+      el.addEventListener('click', function () { goProduct(el.getAttribute('data-product')); });
+    });
+  }
+
+  // ===== Render: ficha de producto =====
+  function renderProducto() {
+    var box = document.getElementById('producto-content');
+    var p = productById(state.productId);
+    if (!p) { go('stock'); return; }
+    loadPhotos(p.photos);
+    var stock = Number(p.stock) || 0;
+    var low = (Number(p.minStock) || 0) > 0 && stock <= (Number(p.minStock) || 0);
+    var delLabel = state.confirmKey === 'delprod:' + p.id ? '¿Seguro? Tocá otra vez' : 'Eliminar';
+
+    var html = '<div class="detail-header">' +
+      '<button type="button" class="btn-white js-back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Volver</button>' +
+      '<div class="spacer"></div>' +
+      '<button type="button" class="btn-white js-edit-product">Editar</button>' +
+      '<button type="button" class="btn-danger-outline js-del-product">' + esc(delLabel) + '</button></div>';
+
+    html += '<div class="info-card"><div class="info-card-top">' +
+      '<div class="info-main"><div class="info-name">' + esc(p.name) + '</div>' +
+      '<div class="info-meta"><span class="prod-cat">' + esc(p.category || 'Otro') + '</span></div></div></div>' +
+      ((p.notes || '').trim() ? '<div class="notes-box">' + esc(p.notes) + '</div>' : '') + '</div>';
+
+    html += '<div class="prod-stats">' +
+      '<div class="prod-stat"><span class="prod-stat-cap">En stock</span><span class="prod-stat-val' + (low ? ' red' : '') + '">' + stock + '</span></div>' +
+      '<div class="prod-stat"><span class="prod-stat-cap">Costo c/u</span><span class="prod-stat-val mono">' + esc(fmtG(p.cost)) + '</span></div>' +
+      '<div class="prod-stat"><span class="prod-stat-cap">Venta c/u</span><span class="prod-stat-val mono">' + esc(fmtG(p.price)) + '</span></div>' +
+      '<div class="prod-stat"><span class="prod-stat-cap">En stock (₲)</span><span class="prod-stat-val mono">' + esc(fmtG(stock * (Number(p.cost) || 0))) + '</span></div>' +
+      '</div>';
+    if (low) html += '<div class="lowstock-banner"><span>⚠ Stock bajo (avisar cuando queden ≤ ' + esc(String(p.minStock)) + ').</span></div>';
+
+    // fotos del producto
+    html += '<div class="info-card"><div class="job-detail-label">Fotos</div><div class="photo-grid">';
+    (p.photos || []).forEach(function (ph, i) {
+      var src = state.photoCache[ph.id] || PIXEL;
+      html += '<img class="photo-thumb" alt="Foto del producto" src="' + esc(src) + '" data-ph-open="prod:' + esc(p.id) + ':' + i + '">';
+    });
+    html += '<div class="photo-add" data-ph-add="prod:' + esc(p.id) + '">' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg>' +
+      '<span>Agregar</span></div></div></div>';
+
+    html += '<button type="button" class="btn-ghost-danger btn-full js-adjust">Ajustar stock (rotura / pérdida)</button>';
+
+    // historial: compras de este producto
+    var buys = [];
+    (state.data.purchases || []).forEach(function (b) {
+      (b.items || []).forEach(function (it) {
+        if (it.productId === p.id) buys.push({ b: b, it: it });
+      });
+    });
+    buys.sort(function (x, y) { return (x.b.paidDate || '') < (y.b.paidDate || '') ? 1 : -1; });
+    html += '<div class="panel"><div class="panel-label">Compras de este producto · ' + buys.length + '</div>';
+    if (buys.length) {
+      html += '<div class="regd-list">' + buys.map(function (x) {
+        var pending = x.b.status === 'paid';
+        var sub = pending
+          ? 'En viaje · pedido ' + dd(x.b.paidDate)
+          : 'Llegó ' + dd(x.b.receivedDate) + ' · costo real ' + fmtG(x.it.unitCost) + ' c/u';
+        return '<div class="regd-row"><div class="regd-main">' +
+          '<div class="regd-name">' + esc(String(x.it.qty)) + ' unidades ' + (pending ? '· <span class="pend-chip">en viaje</span>' : '') + '</div>' +
+          '<div class="regd-sub">' + esc(sub) + '</div></div>' +
+          '<span class="regd-amt mono">' + esc(fmtG((Number(x.it.qty) || 0) * (pending ? (Number(x.it.unitBase) || 0) : (Number(x.it.unitCost) || 0)))) + '</span></div>';
+      }).join('') + '</div>';
+    } else {
+      html += '<div class="panel-empty">Todavía no registraste compras de este producto.</div>';
+    }
+    html += '</div>';
+
+    // historial: ajustes / mermas
+    var adjs = (p.adjusts || []).slice().sort(function (a, b) { return (a.date || '') < (b.date || '') ? 1 : -1; });
+    if (adjs.length) {
+      html += '<div class="panel"><div class="panel-label">Ajustes / mermas · ' + adjs.length + '</div><div class="regd-list">' +
+        adjs.map(function (a) {
+          return '<div class="regd-row"><div class="regd-main">' +
+            '<div class="regd-name">− ' + esc(String(a.qty)) + (a.qty === 1 ? ' unidad' : ' unidades') + '</div>' +
+            '<div class="regd-sub">' + esc((a.reason || '') + ' · ' + dd(a.date)) + '</div></div>' +
+            '<span class="regd-amt mono red">− ' + esc(fmtG((Number(a.qty) || 0) * (Number(p.cost) || 0))) + '</span></div>';
+        }).join('') + '</div></div>';
+    }
+
+    box.innerHTML = html;
+    box.querySelector('.js-back').addEventListener('click', function () { go('stock'); });
+    box.querySelector('.js-edit-product').addEventListener('click', function () { openProductModal(p); });
+    box.querySelector('.js-del-product').addEventListener('click', function () {
+      confirm2('delprod:' + p.id, function () { delProduct(p.id); });
+    });
+    box.querySelector('.js-adjust').addEventListener('click', function () { openAdjustModal(p.id); });
+    box.querySelectorAll('[data-ph-add]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var parts = el.getAttribute('data-ph-add').split(':');
+        _photoTarget = { kind: parts[0], id: parts[1] };
+        photoInput.click();
+      });
+    });
+    box.querySelectorAll('[data-ph-open]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var parts = el.getAttribute('data-ph-open').split(':');
+        var owner = photoOwner(parts[0], parts[1]);
+        if (owner) loadPhotos(owner.photos);
+        if (!state.viewer) histPush();
+        state.viewer = { kind: parts[0], id: parts[1], idx: Number(parts[2]) };
+        render();
+      });
+    });
+  }
+
+  // ===== Render: Compras =====
+  function renderCompras() {
+    var box = document.getElementById('compras-content');
+    var all = (state.data.purchases || []).slice()
+      .sort(function (a, b) { return (a.paidDate || '') < (b.paidDate || '') ? 1 : -1; });
+    var pend = all.filter(function (b) { return b.status === 'paid'; });
+    var recv = all.filter(function (b) { return b.status === 'received'; })
+      .sort(function (a, b) { return (a.receivedDate || '') < (b.receivedDate || '') ? 1 : -1; });
+
+    var itemsTxt = function (b) {
+      return (b.items || []).map(function (it) {
+        var p = productById(it.productId);
+        return (p ? p.name : '(producto eliminado)') + ' × ' + it.qty;
+      }).join(' · ');
+    };
+
+    var html = '<div class="detail-header">' +
+      '<button type="button" class="btn-white js-back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Volver</button>' +
+      '<div class="spacer"></div></div>';
+
+    html += '<button type="button" class="btn-big-primary js-new-purchase">+ Nueva compra</button>';
+
+    if (pend.length) {
+      html += '<div class="section-label amber">En viaje (pagadas, sin llegar) · ' + pend.length + '</div>';
+      html += pend.map(function (b) {
+        var delLbl = state.confirmKey === 'delpur:' + b.id ? '¿Seguro?' : '✕';
+        return '<div class="pur-card pend">' +
+          '<div class="alert-top"><span class="pend-chip">✈ En viaje</span>' +
+          '<span class="alert-date">pagado ' + esc(dd(b.paidDate)) + '</span></div>' +
+          (b.note ? '<div class="pur-note">' + esc(b.note) + '</div>' : '') +
+          '<div class="pur-items">' + esc(itemsTxt(b)) + '</div>' +
+          '<div class="pur-paid">Pagado: <span class="mono">' + esc(fmtG(b.paidAmount)) + '</span></div>' +
+          '<div class="alert-actions">' +
+          '<button type="button" class="btn-pay" data-pur-recv="' + esc(b.id) + '">📦 Llegó la mercadería</button>' +
+          '<button type="button" class="btn-ghost-danger" data-pur-del="' + esc(b.id) + '">' + delLbl + '</button>' +
+          '</div></div>';
+      }).join('');
+    }
+
+    html += '<div class="section-label gray">Recibidas · ' + recv.length + '</div>';
+    if (recv.length) {
+      html += recv.map(function (b) {
+        return '<div class="pur-card">' +
+          '<div class="alert-top"><span class="recv-chip">' + (b.type === 'import' ? '🚢 Importación' : '🏪 Local') + '</span>' +
+          '<span class="alert-date">llegó ' + esc(dd(b.receivedDate)) + '</span></div>' +
+          (b.note ? '<div class="pur-note">' + esc(b.note) + '</div>' : '') +
+          '<div class="pur-items">' + esc(itemsTxt(b)) + '</div>' +
+          '<div class="pur-paid">Costo total final: <span class="mono">' + esc(fmtG(b.totalFinal)) + '</span></div>' +
+          '</div>';
+      }).join('');
+    } else {
+      html += '<div class="dashed-card">Todavía no hay compras recibidas.</div>';
+    }
+
+    box.innerHTML = html;
+    box.querySelector('.js-back').addEventListener('click', function () { go('stock'); });
+    box.querySelector('.js-new-purchase').addEventListener('click', openPurchaseModal);
+    box.querySelectorAll('[data-pur-recv]').forEach(function (el) {
+      el.addEventListener('click', function () { openReceiveModal(el.getAttribute('data-pur-recv')); });
+    });
+    box.querySelectorAll('[data-pur-del]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var id = el.getAttribute('data-pur-del');
+        confirm2('delpur:' + id, function () { delPurchase(id); });
+      });
+    });
+  }
+
   // ===== Render: Cobros =====
   function alertDateLabel(a) {
     if (a.group === 'venc') {
@@ -2240,6 +2935,7 @@
     (data.jobs || []).forEach(function (j) { (j.photos || []).forEach(function (p) { ids.push(p.id); }); });
     (data.clients || []).forEach(function (c) { (c.photos || []).forEach(function (p) { ids.push(p.id); }); });
     (data.expenses || []).forEach(function (e) { (e.photos || []).forEach(function (p) { ids.push(p.id); }); });
+    (data.products || []).forEach(function (pr) { (pr.photos || []).forEach(function (p) { ids.push(p.id); }); });
     return Promise.all(ids.map(function (id) { return idbGet(id).catch(function () { return null; }); })).then(function (vals) {
       var photos = {};
       ids.forEach(function (id, i) { if (vals[i]) photos[id] = vals[i]; });
@@ -2351,8 +3047,8 @@
   }
   function wipeAll() {
     var d = {
-      clients: [], jobs: [], expenses: [], staff: [],
-      settings: { categories: defaultCats(), expenseCategories: defaultExpenseCats(), remindDays: 3, notifEnabled: state.data.settings.notifEnabled, devices: (state.data.settings.devices || []).slice() },
+      clients: [], jobs: [], expenses: [], staff: [], products: [], purchases: [],
+      settings: { categories: defaultCats(), expenseCategories: defaultExpenseCats(), productCategories: defaultProductCats(), remindDays: 3, notifEnabled: state.data.settings.notifEnabled, devices: (state.data.settings.devices || []).slice() },
       demo: false
     };
     persist(d);
@@ -2551,7 +3247,8 @@
 
     // nav activa: Clientes queda resaltado en la ficha; Inicio en el registro
     var navView = view === 'cliente' ? 'clientes'
-      : (view === 'registro' || view === 'regmes' || view === 'gastos' || view === 'personal' ? 'inicio' : view);
+      : (view === 'registro' || view === 'regmes' || view === 'gastos' || view === 'personal'
+        || view === 'stock' || view === 'producto' || view === 'compras' ? 'inicio' : view);
     document.querySelectorAll('[data-nav]').forEach(function (el) {
       if (el.classList.contains('nav-item') || el.classList.contains('tab-item')) {
         el.classList.toggle('active', el.getAttribute('data-nav') === navView);
@@ -2591,6 +3288,9 @@
     if (view === 'regmes') renderRegMonth();
     if (view === 'gastos') renderGastos();
     if (view === 'personal') renderPersonal();
+    if (view === 'stock') renderStock();
+    if (view === 'producto') renderProducto();
+    if (view === 'compras') renderCompras();
     if (view === 'ajustes') renderAjustes();
 
     // visor de fotos (overlay, independiente de la pantalla)
@@ -2694,6 +3394,46 @@
   document.getElementById('sf-name').addEventListener('keydown', function (e) { if (e.key === 'Enter') submitStaff(); });
   clearErrOnInput(['sf-name'], 'sf-err');
 
+  // modal producto
+  prodModalEl.addEventListener('click', function (e) { if (e.target === prodModalEl) closeProductModal(); });
+  document.getElementById('prf-cancel').addEventListener('click', closeProductModal);
+  document.getElementById('prf-save').addEventListener('click', submitProduct);
+  document.getElementById('prf-name').addEventListener('keydown', function (e) { if (e.key === 'Enter') submitProduct(); });
+  moneyInput(document.getElementById('prf-price'));
+  clearErrOnInput(['prf-name'], 'prf-err');
+
+  // modal compra
+  purModalEl.addEventListener('click', function (e) { if (e.target === purModalEl) closePurchaseModal(); });
+  document.getElementById('buf-cancel').addEventListener('click', closePurchaseModal);
+  document.getElementById('buf-save').addEventListener('click', submitPurchase);
+  document.getElementById('buf-import').addEventListener('click', function () { buForm.type = 'import'; renderPurchaseForm(); });
+  document.getElementById('buf-local').addEventListener('click', function () { buForm.type = 'local'; renderPurchaseForm(); });
+  document.getElementById('buf-add-item').addEventListener('click', function () {
+    buForm.items.push({ kind: 'item', productId: '', qty: 1, unitBase: 0 });
+    renderPurchaseForm();
+  });
+  document.getElementById('buf-add-set').addEventListener('click', function () {
+    buForm.items.push({ kind: 'set', motorId: '', bombaId: '', qty: 1, setPrice: 0, motorPart: 0 });
+    renderPurchaseForm();
+  });
+  moneyInput(document.getElementById('buf-paid'));
+
+  // modal llegada de mercadería
+  rcvModalEl.addEventListener('click', function (e) { if (e.target === rcvModalEl) closeReceiveModal(); });
+  document.getElementById('rcf-cancel').addEventListener('click', closeReceiveModal);
+  document.getElementById('rcf-save').addEventListener('click', submitReceive);
+  moneyInput(document.getElementById('rcf-total'));
+  document.getElementById('rcf-total').addEventListener('input', function () {
+    document.getElementById('rcf-err').hidden = true;
+    renderReceivePreview();
+  });
+
+  // modal ajuste de stock
+  adjModalEl.addEventListener('click', function (e) { if (e.target === adjModalEl) closeAdjustModal(); });
+  document.getElementById('ajf-cancel').addEventListener('click', closeAdjustModal);
+  document.getElementById('ajf-save').addEventListener('click', submitAdjust);
+  clearErrOnInput(['ajf-qty', 'ajf-reason'], 'ajf-err');
+
   // modal posponer / fijar fecha
   postModalEl.addEventListener('click', function (e) { if (e.target === postModalEl) closePostModal(); });
   document.getElementById('pp-cancel').addEventListener('click', closePostModal);
@@ -2718,6 +3458,10 @@
     if (!postModalEl.hidden) closePostModal();
     if (!expModalEl.hidden) closeExpModal();
     if (!staffModalEl.hidden) closeStaffModal();
+    if (!prodModalEl.hidden) closeProductModal();
+    if (!purModalEl.hidden) closePurchaseModal();
+    if (!rcvModalEl.hidden) closeReceiveModal();
+    if (!adjModalEl.hidden) closeAdjustModal();
   });
   // flechas del teclado en el visor (escritorio)
   document.addEventListener('keydown', function (e) {
@@ -3078,6 +3822,10 @@
     if (!postModalEl.hidden) { postModalEl.hidden = true; return; }
     if (!expModalEl.hidden) { expModalEl.hidden = true; return; }
     if (!staffModalEl.hidden) { staffModalEl.hidden = true; return; }
+    if (!prodModalEl.hidden) { prodModalEl.hidden = true; return; }
+    if (!purModalEl.hidden) { purModalEl.hidden = true; return; }
+    if (!rcvModalEl.hidden) { rcvModalEl.hidden = true; return; }
+    if (!adjModalEl.hidden) { adjModalEl.hidden = true; return; }
     // 3) retroceso de pantalla: ficha -> clientes -> inicio
     if (state.view === 'cliente') {
       curViewDepth = 1;
@@ -3091,6 +3839,15 @@
     if (state.view === 'regmes' || state.view === 'gastos') {
       curViewDepth = 1;
       state.view = 'registro';
+      state.confirmKey = null;
+      render();
+      window.scrollTo(0, 0);
+      return;
+    }
+    // ficha de producto / compras -> stock
+    if (state.view === 'producto' || state.view === 'compras') {
+      curViewDepth = 1;
+      state.view = 'stock';
       state.confirmKey = null;
       render();
       window.scrollTo(0, 0);

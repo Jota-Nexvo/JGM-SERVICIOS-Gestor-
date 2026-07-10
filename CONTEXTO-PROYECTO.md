@@ -224,6 +224,48 @@ Fases del plan original (todas hechas):
   `openStaffModal/submitStaff/delStaff`, `staffById`, `renderGastos`,
   `renderPersonal`. Navegación: atrás = personal → gastos → registro → inicio.
 
+### Etapa C2 de la ampliación (2026-07-10) — Stock y compras
+
+- **Modelo**: `products: [{ id, name, category, notes, photos, cost /*promedio
+  ponderado vigente*/, price /*venta sugerido*/, stock, minStock,
+  adjusts: [{id,date,qty,reason}] /*mermas*/ }]` y `purchases: [{ id,
+  type:'import'|'local', status:'paid'|'received', paidDate, receivedDate,
+  note, paidAmount, totalFinal, items:[{ productId, qty, unitBase,
+  unitCost /*se fija al recibir*/ }] }]`; `settings.productCategories`
+  (Motor, Bomba, Relé, Repuesto, Otro). El stock y el costo NUNCA se editan a
+  mano: entran con compras y bajan con mermas (y ventas, en C3).
+- **Pantalla Stock** (vista `stock`, profundidad 1, acceso desde Inicio):
+  banner de stock bajo, acceso a Compras (con contador "en viaje"), "+ Nuevo
+  producto", línea "plata en stock (al costo)" y lista de productos (foto,
+  categoría, precio venta, stock en grande, rojo si `stock ≤ minStock`).
+- **Ficha de producto** (vista `producto`, prof. 2): stats (stock, costo c/u,
+  venta c/u, valorizado), fotos (kind `'prod'`), editar/eliminar, **"Ajustar
+  stock (rotura/pérdida)"** (modal `#modal-adjust`: cantidad ≤ stock + motivo
+  obligatorio → `adjusts[]`), historial de compras del producto y de mermas.
+- **Compras** (vista `compras`, prof. 2): "+ Nueva compra" (modal
+  `#modal-purchase`): tipo **Importación** (2 pasos) o **Local** (1 paso).
+  Items por fila (producto, cantidad, ₲ c/u) y filas de **Conjunto
+  motor+bomba** (elige ambos productos, cantidad de conjuntos, precio del
+  conjunto y "parte del motor" — la de la bomba se calcula sola; al guardar se
+  aplana en dos items). Import → queda **"En viaje"** con `paidAmount` (default
+  = suma base, editable). Botón **"Llegó la mercadería"** (modal
+  `#modal-receive`): fecha + costo total final → **prorrateo proporcional al
+  valor** (`unitCost = unitBase × totalFinal/sumaBase`, preview en vivo) →
+  entra stock con **promedio ponderado** (`applyPurchaseToStock`). Local:
+  entra directo con `unitCost = unitBase`. Pedidos en viaje se pueden borrar;
+  los recibidos no (protege la integridad del stock).
+- **Inicio**: tarjeta de acceso "Stock y productos" (con pedidos en viaje) y
+  banner ⚠ de stock bajo.
+- **FIX de historial (bug preexistente)**: guardar un cliente/producto nuevo
+  cerraba el modal (`history.go(-1)` asíncrono) y navegaba a la ficha
+  (`pushState`) a la vez → el historial quedaba desfasado y "atrás" podía
+  salir de la app. Ahora la entrada de historial del modal **pasa a ser** la
+  de la ficha (`goClient(id, true)` / `goProduct(id, true)` con `reuseHist`).
+- Funciones clave: `productById`, `lowStockProducts`, `inventoryValue`,
+  `pendingPurchases`, `applyPurchaseToStock`, `flattenPurchaseItems`,
+  `openPurchaseModal/submitPurchase`, `openReceiveModal/submitReceive`,
+  `openAdjustModal/submitAdjust`, `renderStock/renderProducto/renderCompras`.
+
 ## 5. Modelo de datos
 
 Clave de `localStorage`: **`jgm_gestor_v1`**. Estructura:
@@ -250,6 +292,20 @@ Clave de `localStorage`: **`jgm_gestor_v1`**. Estructura:
     photos: [{ id, date }]   // foto del comprobante; binarios en IndexedDB
   }],
   staff: [{ id, name, phone, ci, notes }],   // personales (Etapa C1)
+  products: [{                               // catálogo para la venta (Etapa C2)
+    id, name, category, notes, photos,
+    cost,       // costo promedio ponderado vigente (entra con compras)
+    price,      // precio de venta sugerido
+    stock, minStock,
+    adjusts: [{ id, date, qty, reason }]     // mermas / roturas
+  }],
+  purchases: [{                              // compras / lotes (Etapa C2)
+    id, type: 'import'|'local', status: 'paid'|'received',
+    paidDate, receivedDate, note,
+    paidAmount,   // lo pagado al hacer el pedido (sale de caja)
+    totalFinal,   // costo final con flete/aduana (se carga al recibir)
+    items: [{ productId, qty, unitBase, unitCost }]  // unitCost = prorrateado
+  }],
   settings: {
     categories: [...], expenseCategories: [...], remindDays, notifEnabled,
     devices: [{ id, name, added }]   // dispositivos autorizados (máx. 4)
@@ -422,6 +478,6 @@ por el dueño — no re-preguntar.
   - **Solo guaraníes.** Los precios reales de China los va a cargar el
     dueño solo cuando los tenga (la app queda lista; nada pre-cargado).
   - Sub-fases de construcción: **C1 Gastos+Personal: HECHA** (ver sección 4) →
-    C2 Stock+Compras → C3 Ventas+Garantías+Trabajos → C4 Finanzas →
-    C5 integraciones (respaldos con todo lo nuevo, Ajustes, seed demo, reset,
-    popstate, bump de sw.js).
+    **C2 Stock+Compras: HECHA** (ver sección 4) → C3
+    Ventas+Garantías+Trabajos → C4 Finanzas → C5 integraciones (respaldos con
+    todo lo nuevo, Ajustes, seed demo, reset, popstate, bump de sw.js).
