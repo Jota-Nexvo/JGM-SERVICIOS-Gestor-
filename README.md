@@ -37,6 +37,8 @@ También funciona abriendo `index.html` directamente en el navegador.
 - [x] **Fase 5 — Fotos:** IndexedDB, agregar desde el trabajo, visor, borrado en cascada.
 - [x] **Fase 6 — Ajustes + respaldo:** categorías, aviso global, exportar/importar JSON, restablecer/borrar todo.
 - [x] **Fase 7 — Pulido + PWA:** manifest + service worker offline, icono con el logo, notificaciones vía service worker (Android), revisión visual fina.
+- [x] **Etapa A — Cobranza más fácil (2026-07-10):** botón «Recordar por WhatsApp» con mensaje de cobro pre-escrito (en la ficha del cliente y en las tarjetas de Cobros), botón «Estado de cuenta» que comparte un resumen en texto (trabajos con saldo, pagos y total adeudado) y vibración del celular al confirmar pagos, borrados y al desbloquear.
+- [ ] **Etapa B — Mantenimiento periódico** y **Etapa C — Stock, Ventas, Gastos y Finanzas**: en desarrollo (ver `CONTEXTO-PROYECTO.md`, sección 11).
 
 ## Seguridad
 

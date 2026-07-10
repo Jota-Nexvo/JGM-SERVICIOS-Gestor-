@@ -6,13 +6,12 @@
 > algo importante. Si alguna vez perdés el chat, **este archivo es la memoria del
 > proyecto.**
 >
-> **Última actualización:** 2026-07-05 — (1) PIN de 6 a 10 dígitos y bloqueo
-> escalonado persistente por intentos fallidos; charla sobre
-> seguridad/dominio/tokens documentada (sección 10). (2) Nueva pantalla
-> **Registro mensual de ingresos** (facturado vs. cobrado mes por mes) con
-> **detalle por mes** (tocás un mes y ves la lista de trabajos facturados y
-> de cobros, cada uno con cliente, concepto y fecha; y tocando una fila se
-> abre la ficha del cliente).
+> **Última actualización:** 2026-07-10 — **Etapa A de la ampliación** (rama
+> `claude/manager-app-features-v52uqa`): recordatorio de cobro por WhatsApp con
+> mensaje pre-escrito, estado de cuenta compartible y vibración nativa. Además
+> quedó **aprobado el plan completo de ampliación** (Etapas A/B/C): stock de
+> productos importados de China, ventas con garantía, gastos con personal y
+> estado de resultados — ver sección 11.
 
 ## 1. Qué es
 
@@ -26,17 +25,16 @@ dispositivo.
 ## 2. Dónde está el código
 
 - **Repositorio:** `Jota-Nexvo/JGM-SERVICIOS-Gestor-` (GitHub)
-- **Rama de trabajo:** `claude/jgm-gestor-phase-1-mwyfhk` (todo el desarrollo
-  vive acá; `main` todavía no tiene nada de esto)
-- **Estado del Pull Request:** se creó el PR #1 y **se cerró sin mergear** a
-  pedido del dueño (quería revisar bien la seguridad antes de publicar). **La
-  app NO está mergeada a `main` ni publicada en ningún lado todavía.**
+- **Publicada:** la app se mergeó a `main` (PR #2, "publicación para instalar")
+  y el dueño ya la usa instalada en el celular. Funciona de maravilla según él.
+- **Rama de trabajo actual:** `claude/manager-app-features-v52uqa` (la
+  ampliación por etapas — ver sección 11).
 - El paquete de diseño original (prototipo de referencia) está en
   `Gestor de clientes y pagos.zip`, en la raíz del repo.
 
 ### Para retomar en una sesión nueva
 Decile a Claude Code: *"Lee CONTEXTO-PROYECTO.md y README.md de este repo,
-estamos trabajando en la rama `claude/jgm-gestor-phase-1-mwyfhk`."* Con eso
+estamos trabajando en la rama `claude/manager-app-features-v52uqa`."* Con eso
 alcanza para que entienda todo el historial sin releer los commits uno por uno.
 
 ## 3. Stack técnico
@@ -155,6 +153,24 @@ Fases del plan original (todas hechas):
     son tocables. Como cualquier ficha, el botón atrás desde ahí vuelve a
     Clientes (comportamiento consistente y balanceado en el historial).
 
+### Etapa A de la ampliación (2026-07-10) — Cobranza más fácil
+
+- **Recordatorio de cobro por WhatsApp**: `waLink(phone, text)` ahora acepta un
+  texto opcional (`?text=`). Botón "Recordar por WhatsApp" en la ficha del
+  cliente (junto a Registrar pago, solo si hay saldo y teléfono) y botón
+  compacto verde en las tarjetas de Cobros. Mensaje: "Hola [nombre], te
+  recuerdo el saldo pendiente de ₲ X por [concepto]. ¡Gracias! — JGM
+  SERVICIOS" (con un solo trabajo con deuda usa su descripción; con varios,
+  "los trabajos realizados"). Funciones: `waRemindMsg`, `openWaRemind`.
+- **Estado de cuenta compartible**: botón "📄 Estado de cuenta" en la ficha —
+  arma texto plano (cliente, cada trabajo con precio/pagado/saldo, total
+  adeudado, fecha) y lo ofrece por `navigator.share`; sin soporte, lo copia al
+  portapapeles. Funciones: `accountStatement`, `shareStatement`.
+- **Vibración nativa**: helper `vib(pattern)`; vibra en la ejecución de toda
+  confirmación de doble toque (`confirm2`, pulso doble), al guardar un pago y
+  al desbloquear con el PIN.
+- Cache del service worker: `jgm-gestor-v2` → `jgm-gestor-v3`.
+
 ## 5. Modelo de datos
 
 Clave de `localStorage`: **`jgm_gestor_v1`**. Estructura:
@@ -212,32 +228,15 @@ si el trabajo está saldado o no.
   (ej. `0975 829 708`); la función `waLink()` arma sola el
   `wa.me/595975829708` quitando el 0 y agregando el 595.
 
-## 7. Pendiente / ideas evaluadas, NO implementadas todavía
+## 7. Pendiente / ideas evaluadas
 
-Estas se ofrecieron y el dueño **todavía no las pidió** (decidir en la
-próxima sesión):
-
-1. **WhatsApp con mensaje de cobro pre-escrito** — que el botón de
-   WhatsApp abra el chat con un texto armado tipo "Hola [nombre], te
-   recuerdo el saldo pendiente de ₲ X…".
-2. **Estado de cuenta compartible** — resumen de texto de lo que debe un
-   cliente, para mandar o guardar como comprobante.
-3. **Vibración (`navigator.vibrate`)** al confirmar borrados/pagos —
-   detalle de sensación nativa en el celular.
-4. **Recordatorio de mantenimiento periódico** por cliente (ej. "revisar
-   este pozo en 6 meses").
-5. **Fase 8 — Gastos y contabilidad interna** (tema grande, discutido en
-   detalle): agregar un módulo de Gastos (espejo de Trabajos: fecha,
-   categoría, monto, nota, foto de comprobante opcional) + una pantalla de
-   Finanzas con el resultado mensual = **Cobrado − Gastos**, y acumulado
-   anual. Recomendación dada: **libro de caja categorizado**, NO
-   contabilidad de partida doble (sería sobre-ingeniería para una empresa
-   unipersonal). Integrar en la misma app (reutiliza seguridad, respaldo y
-   los datos de ingresos que ya existen), no como app separada.
-   **NOTA (2026-07-05):** la parte de **ingresos** ya está hecha (ver la
-   pantalla "Registro mensual de ingresos" en la sección 4). Para la Fase 8
-   faltaría el módulo de Gastos y restarlos al Cobrado — el registro mensual
-   ya da la estructura por mes/año para colgarle los gastos.
+**2026-07-10:** el dueño aprobó el plan de ampliación completo (ver sección
+11). De la lista original: los puntos 1, 2 y 3 (WhatsApp con mensaje,
+estado de cuenta, vibración) **ya están implementados** (Etapa A, sección 4);
+el punto 4 (mantenimiento periódico) es la **Etapa B** y el punto 5 (Fase 8 —
+gastos y contabilidad) creció y se convirtió en la **Etapa C** (stock +
+ventas + gastos + estado de resultados). Lo pendiente ahora es lo que falte
+de las etapas B y C según la sección 11.
 
 ## 8. Cómo instalar (cuando el dueño lo autorice)
 
@@ -311,3 +310,60 @@ volver a discutirlas):
 > **Regla de oro de seguridad (NO romper):** el PIN lo crea el dueño **en su
 > teléfono** y de él solo se guarda un hash. **Nunca** pedirle ni recibir su PIN
 > ni ninguna contraseña — compartirlo rompería el modelo de seguridad.
+
+## 11. Plan de ampliación aprobado (2026-07-10) — Etapas A/B/C
+
+**Contexto de negocio:** JGM va a **importar productos de China** para vender
+(motobombas sumergibles —el conjunto **motor + bomba**— y componentes como el
+relé falta de fase). La app pasa de solo servicios a **servicios + comercio
+con stock**. Todas las decisiones de abajo fueron consultadas y respondidas
+por el dueño — no re-preguntar.
+
+- **Etapa A — Cobranza más fácil: HECHA** (ver sección 4).
+- **Etapa B — Mantenimiento periódico** (pendiente): `client.maint =
+  { months, next }`; bloque en la ficha (activar, intervalo 3/6/12 meses,
+  "Hecho" recalcula, "Posponer"); visible en Cobros (chip Mantenimiento),
+  Inicio y notificaciones.
+- **Etapa C — Stock, Ventas, Gastos y Finanzas** (pendiente), decisiones:
+  - **Motor y bomba = productos separados** en el catálogo (cada uno con
+    stock, costo y precio). Al vender se elige **motor / bomba / ambas**
+    ("ambas" sugiere la suma; precio del catálogo es sugerido, se puede
+    escribir el precio real de esa venta).
+  - **Ventas SIEMPRE con cliente** (por las garantías; sin venta anónima).
+    Venta a crédito = igual que trabajo a crédito (seña, fechas, en Cobros).
+  - **Garantía por venta**: plazo elegible (6m/1año/sin); vigente/vencida
+    visible en ficha de cliente y de producto. También aplica a productos
+    instalados dentro de un trabajo.
+  - **Trabajo con venta incluida**: en el modal de trabajo se agregan
+    productos vendidos; **total = mano de obra + productos (suma automática
+    y detallada)**; descuenta stock y congela costo (snapshot).
+  - **Las fichas del día a día NO muestran costos ni ganancia** — solo
+    precios de venta y pagos. La ganancia real vive SOLO en el Estado de
+    resultados.
+  - **Compras de importación en DOS pasos**: "Pagué el pedido" (sale de
+    caja, pedido en viaje) → "Llegó" (costo total final con flete/aduana →
+    **prorrateo proporcional al valor** → costo real por unidad; re-compra =
+    **promedio ponderado**). Soporta **precio de conjunto** (motobomba
+    completa) que se divide entre motor y bomba con montos editables.
+    También **compra local** en un paso (costo directo).
+  - **Contabilidad de inventario**: comprar stock NO es gasto del mes (es
+    activo); el costo entra al resultado al vender (COGS). **Mermas** con
+    botón "ajustar stock" + motivo, visibles en el estado de resultados.
+  - **Personal**: ficha nombre/teléfono/CI/notas; pagos al personal como
+    gasto categoría Personal con **vínculo opcional a un trabajo** (son
+    por trabajo, no fijos).
+  - **Gastos**: categorías Movilidad, Combustible, Viáticos (con subtipo
+    opcional desayuno/almuerzo/cena/hospedaje), Personal,
+    Productos/Materiales, Otro; nota y foto de comprobante opcionales.
+  - **Finanzas**: vista principal = **caja real** (entró − salió); vista
+    secundaria = resultado económico (Ingresos − COGS − Mermas = Margen
+    bruto; − Gastos = Resultado neto, con %). Tarjetas: inventario
+    valorizado, pedidos en viaje, desglose de gastos por categoría.
+  - **Navegación**: barra inferior Inicio · Clientes · Cobros · **Stock** ·
+    **Finanzas**; Ajustes accesible desde Inicio.
+  - **Solo guaraníes.** Los precios reales de China los va a cargar el
+    dueño solo cuando los tenga (la app queda lista; nada pre-cargado).
+  - Sub-fases de construcción: C1 Gastos+Personal → C2 Stock+Compras →
+    C3 Ventas+Garantías+Trabajos → C4 Finanzas → C5 integraciones
+    (respaldos con todo lo nuevo, Ajustes, seed demo, reset, popstate,
+    bump de sw.js).

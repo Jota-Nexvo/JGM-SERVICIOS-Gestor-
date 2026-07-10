@@ -340,11 +340,17 @@
     toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2600);
   }
 
+  // ===== Vibración (sensación nativa en el celular) =====
+  function vib(pattern) {
+    try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
+  }
+
   // ===== Confirmación de doble toque =====
   function confirm2(key, fn) {
     if (state.confirmKey === key) {
       state.confirmKey = null;
       clearTimeout(confirmTimer);
+      vib([30, 60, 30]);
       fn();
       return;
     }
@@ -691,6 +697,7 @@
       paidOff = recomputeDone(j);
     });
     closePayModal();
+    vib(30);
     toast(editing ? 'Pago actualizado.' : (paidOff ? 'Pago registrado — ¡trabajo saldado!' : 'Pago registrado.'));
   }
   function delPayment(jobId, payId) {
@@ -823,10 +830,76 @@
   }
 
   // ===== WhatsApp =====
-  function waLink(phone) {
+  function waLink(phone, text) {
     var digits = (phone || '').replace(/\D/g, '');
     if (!digits) return '';
-    return 'https://wa.me/' + (digits.indexOf('595') === 0 ? digits : '595' + digits.replace(/^0/, ''));
+    var url = 'https://wa.me/' + (digits.indexOf('595') === 0 ? digits : '595' + digits.replace(/^0/, ''));
+    return text ? url + '?text=' + encodeURIComponent(text) : url;
+  }
+  // Mensaje de cobro pre-escrito
+  function waRemindMsg(name, bal, concept) {
+    return 'Hola ' + name + ', te recuerdo el saldo pendiente de ' + fmtG(bal) +
+      ' por ' + concept + '. ¡Gracias! — JGM SERVICIOS';
+  }
+  // Abre WhatsApp con el recordatorio de todo lo que debe un cliente
+  function openWaRemind(cid) {
+    var c = state.data.clients.find(function (x) { return x.id === cid; });
+    if (!c || !c.phone) return;
+    var debts = jobsOf(cid).filter(function (j) { return j.credit && jobBalance(j) > 0; });
+    if (!debts.length) { toast('Este cliente está al día.'); return; }
+    var bal = debts.reduce(function (a, j) { return a + jobBalance(j); }, 0);
+    var concept = debts.length === 1 ? (debts[0].desc || debts[0].category) : 'los trabajos realizados';
+    window.open(waLink(c.phone, waRemindMsg(c.name, bal, concept)), '_blank', 'noopener');
+  }
+
+  // ===== Estado de cuenta compartible =====
+  function accountStatement(cid) {
+    var c = state.data.clients.find(function (x) { return x.id === cid; });
+    if (!c) return '';
+    var debts = jobsOf(cid).filter(function (j) { return j.credit && jobBalance(j) > 0; })
+      .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    var total = 0;
+    var lines = [];
+    lines.push('JGM SERVICIOS — Estado de cuenta');
+    lines.push('Cliente: ' + c.name);
+    lines.push('Fecha: ' + dd(todayIso()));
+    lines.push('');
+    if (debts.length) {
+      lines.push('Trabajos con saldo pendiente:');
+      debts.forEach(function (j) {
+        var paid = jobPaid(j), balj = jobBalance(j);
+        total += balj;
+        lines.push('• ' + (j.desc || j.category) + ' — ' + dd(j.date));
+        lines.push('  Precio: ' + fmtG(j.price) + ' · Pagado: ' + fmtG(paid) + ' · Saldo: ' + fmtG(balj));
+      });
+      lines.push('');
+      lines.push('TOTAL ADEUDADO: ' + fmtG(total));
+    } else {
+      lines.push('Sin saldos pendientes — cliente al día. ✓');
+    }
+    return lines.join('\n');
+  }
+  function copyStatement(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(function () { toast('Estado de cuenta copiado — pegalo donde quieras.'); })
+        .catch(function () { window.prompt('Copiá el estado de cuenta:', text); });
+    } else {
+      window.prompt('Copiá el estado de cuenta:', text);
+    }
+  }
+  function shareStatement(cid) {
+    var text = accountStatement(cid);
+    if (!text) return;
+    if (navigator.share) {
+      navigator.share({ title: 'Estado de cuenta — JGM SERVICIOS', text: text })
+        .catch(function (err) {
+          if (err && err.name === 'AbortError') return; // el usuario canceló
+          copyStatement(text);
+        });
+    } else {
+      copyStatement(text);
+    }
   }
 
   // ===== Ubicación (GPS / link de mapa) =====
@@ -1085,6 +1158,11 @@
     html += '<button type="button" class="btn-big-primary js-client-new-job">+ Nuevo trabajo para este cliente</button>';
     if (bal > 0) {
       html += '<button type="button" class="btn-big-pay js-client-pay">+ Registrar pago</button>';
+      html += '<div class="acct-actions">' +
+        (wa ? '<button type="button" class="acct-btn wa js-client-remind">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L4 20l1-4.5A8.5 8.5 0 1 1 21 11.5"/></svg>' +
+          'Recordar por WhatsApp</button>' : '') +
+        '<button type="button" class="acct-btn js-client-statement">📄 Estado de cuenta</button></div>';
     }
 
     if (js.length) {
@@ -1123,6 +1201,10 @@
     });
     var clientPayBtn = box.querySelector('.js-client-pay');
     if (clientPayBtn) clientPayBtn.addEventListener('click', function () { openPayForClient(c.id); });
+    var remindBtn = box.querySelector('.js-client-remind');
+    if (remindBtn) remindBtn.addEventListener('click', function () { openWaRemind(c.id); });
+    var stmtBtn = box.querySelector('.js-client-statement');
+    if (stmtBtn) stmtBtn.addEventListener('click', function () { shareStatement(c.id); });
     box.querySelectorAll('[data-toggle-job]').forEach(function (el) {
       el.addEventListener('click', function () {
         var id = el.getAttribute('data-toggle-job');
@@ -1537,6 +1619,8 @@
         '<div class="alert-actions">' +
         '<button type="button" class="btn-pay" data-alert-pay="' + esc(a.j.id) + '">Registrar pago</button>' +
         '<button type="button" class="btn-ghost" data-alert-post="' + esc(a.j.id) + '" data-dd="' + esc(a.x.id) + '">Posponer</button>' +
+        (c && c.phone ? '<button type="button" class="btn-wa-sm" data-alert-wa="' + esc(a.j.clientId) + '" aria-label="Recordar por WhatsApp">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L4 20l1-4.5A8.5 8.5 0 1 1 21 11.5"/></svg></button>' : '') +
         '</div></div>';
     };
 
@@ -1588,6 +1672,9 @@
     });
     box.querySelectorAll('[data-alert-post]').forEach(function (el) {
       el.addEventListener('click', function () { openPost(el.getAttribute('data-alert-post'), el.getAttribute('data-dd')); });
+    });
+    box.querySelectorAll('[data-alert-wa]').forEach(function (el) {
+      el.addEventListener('click', function () { openWaRemind(el.getAttribute('data-alert-wa')); });
     });
     box.querySelectorAll('[data-sin-post]').forEach(function (el) {
       el.addEventListener('click', function () { openPost(el.getAttribute('data-sin-post'), null); });
@@ -2347,7 +2434,7 @@
     lkGo.disabled = true;
     verifyPin(v1).then(function (ok) {
       lkGo.disabled = false;
-      if (ok) { clearAtt(); stopCountdown(); enterApp(v1); return; }
+      if (ok) { clearAtt(); stopCountdown(); vib(30); enterApp(v1); return; }
       // fallo: registra el intento y aplica espera creciente (persistente)
       var a = loadAtt();
       a.fails = (a.fails || 0) + 1;
