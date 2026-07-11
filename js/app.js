@@ -4145,6 +4145,7 @@
   document.getElementById('prf-save').addEventListener('click', submitProduct);
   document.getElementById('prf-name').addEventListener('keydown', function (e) { if (e.key === 'Enter') submitProduct(); });
   moneyInput(document.getElementById('prf-price'));
+  moneyInput(document.getElementById('prf-minprice'));
   clearErrOnInput(['prf-name'], 'prf-err');
 
   // modal compra
