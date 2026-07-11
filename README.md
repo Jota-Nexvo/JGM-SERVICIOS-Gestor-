@@ -25,7 +25,7 @@ python3 -m http.server 8080
 También funciona abriendo `index.html` directamente en el navegador.
 
 - **Escritorio (≥880px):** sidebar oscura a la izquierda + topbar.
-- **Móvil (<880px):** header con logo, tab bar inferior de 4 ítems + botón «+» central.
+- **Móvil (<880px):** header con logo (+ campanita y engranaje de Ajustes), tab bar inferior de 5 ítems (Inicio · Clientes · Cobros · Stock · Finanzas) + botón «+» central.
 - Los datos de ejemplo se cargan la primera vez y sobreviven a la recarga (clave `jgm_gestor_v1` de `localStorage`).
 
 ## Plan por fases
@@ -39,7 +39,14 @@ También funciona abriendo `index.html` directamente en el navegador.
 - [x] **Fase 7 — Pulido + PWA:** manifest + service worker offline, icono con el logo, notificaciones vía service worker (Android), revisión visual fina.
 - [x] **Etapa A — Cobranza más fácil (2026-07-10):** botón «Recordar por WhatsApp» con mensaje de cobro pre-escrito (en la ficha del cliente y en las tarjetas de Cobros), botón «Estado de cuenta» que comparte un resumen en texto (trabajos con saldo, pagos y total adeudado) y vibración del celular al confirmar pagos, borrados y al desbloquear.
 - [x] **Etapa B — Mantenimiento periódico (2026-07-10):** recordatorio por cliente («revisar este pozo cada 6 meses»): se activa desde la ficha (3/6/12 meses u otro), aparece en Cobros con chip 🔧, avisa en Inicio y en la notificación diaria cuando vence, con botones «✓ Hecho» (recalcula la próxima fecha) y «Posponer».
-- [ ] **Etapa C — Stock, Ventas, Gastos y Finanzas**: en desarrollo (ver `CONTEXTO-PROYECTO.md`, sección 11).
+- [x] **Etapa C — Stock, Ventas, Gastos y Finanzas (2026-07-11, v0.2.0):** la ampliación grande para la importación de productos de China:
+  - **Stock**: catálogo de productos (motor y bomba separados), stock mínimo con alerta, fotos, mermas con motivo, plata invertida en stock.
+  - **Compras**: importación en 2 pasos («pagué el pedido» → «llegó la mercadería» con el costo total final prorrateado por valor y filas de conjunto motor+bomba con división editable) y compra local en 1 paso; costo promedio ponderado.
+  - **Ventas**: siempre con cliente (por la garantía), precio del catálogo sugerido y editable, contado o crédito (seña + fecha de cobro, integradas a Cobros), garantía por producto con estado vigente/vencida.
+  - **Trabajos con productos**: mano de obra + productos del stock = total automático; el stock se descuenta solo.
+  - **Gastos y Personal**: categorías (viáticos con subtipo, pagos al personal ligados opcionalmente a un trabajo), foto de comprobante, listado de personales con total pagado.
+  - **Finanzas**: caja real (entró − gastos − compras = flujo neto) y estado de resultados (ingresos − costo de lo vendido − mermas = margen bruto − gastos = resultado neto, con %), tarjetas Por cobrar / En stock / Pedidos en viaje, registro mensual con detalle.
+  - **Navegación nueva**: barra inferior Inicio · Clientes · Cobros · Stock · Finanzas; Ajustes en el engranaje del header.
 
 ## Seguridad
 

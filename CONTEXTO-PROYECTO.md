@@ -6,12 +6,15 @@
 > algo importante. Si alguna vez perdés el chat, **este archivo es la memoria del
 > proyecto.**
 >
-> **Última actualización:** 2026-07-10 — **Etapa A de la ampliación** (rama
-> `claude/manager-app-features-v52uqa`): recordatorio de cobro por WhatsApp con
-> mensaje pre-escrito, estado de cuenta compartible y vibración nativa. Además
-> quedó **aprobado el plan completo de ampliación** (Etapas A/B/C): stock de
-> productos importados de China, ventas con garantía, gastos con personal y
-> estado de resultados — ver sección 11.
+> **Última actualización:** 2026-07-11 — **AMPLIACIÓN COMPLETA (Etapas A, B y
+> C, v0.2.0)** en la rama `claude/manager-app-features-v52uqa`, lista para
+> mergear: cobranza por WhatsApp + estado de cuenta + vibración (A),
+> mantenimiento periódico (B), y el punto principal (C): gastos + personal,
+> stock con importaciones de China (2 pasos con prorrateo y conjuntos
+> motor+bomba), ventas con garantía integradas a Cobros, productos dentro de
+> trabajos, y Finanzas con caja real y estado de resultados. Barra de
+> navegación nueva: Inicio · Clientes · Cobros · Stock · Finanzas (Ajustes en
+> el engranaje del header). Ver secciones 4 y 11.
 
 ## 1. Qué es
 
@@ -330,6 +333,26 @@ Fases del plan original (todas hechas):
   (caja, margen, neto) ahora muestran el "−" (antes `dots()` usaba valor
   absoluto y una caja negativa se veía positiva).
 
+### Etapa C5 de la ampliación (2026-07-11) — Integraciones finales
+
+- **Navegación nueva**: barra inferior de 5 pestañas **Inicio · Clientes ·
+  Cobros · Stock · Finanzas** (+ FAB central). **Ajustes salió de la barra**:
+  se abre con el **engranaje del header móvil** (siempre visible, junto a la
+  campanita); en escritorio la sidebar tiene Inicio/Clientes/Cobros/Stock/
+  Finanzas/Ajustes. Cada subpantalla resalta su pestaña madre (regmes/gastos/
+  personal → Finanzas; producto/compras → Stock). La pantalla `registro` se
+  renombró a **"Finanzas"** en títulos y accesos.
+- **Versión**: pie de Ajustes → v0.2.0; cache del service worker →
+  `jgm-gestor-v4`.
+- **Verificación end-to-end final** (Playwright, Poco X7 Pro y Galaxy A25,
+  las 7 suites en verde): exportar copia → incluye clients/jobs/expenses/
+  staff/products/purchases/sales + fotos → borrar todo → importar restaura
+  TODO; un respaldo con el formato viejo (solo clients/jobs/settings) importa
+  y se normaliza sin romper; foto de comprobante por el pipeline `exp`.
+- Los scripts de verificación de cada etapa (verify-etapa-a…c5.js) simulan
+  los dos celulares del dueño, revisan consola limpia y sin desborde
+  horizontal, y validan la matemática financiera contra cálculos a mano.
+
 ## 5. Modelo de datos
 
 Clave de `localStorage`: **`jgm_gestor_v1`**. Estructura:
@@ -552,5 +575,6 @@ por el dueño — no re-preguntar.
     dueño solo cuando los tenga (la app queda lista; nada pre-cargado).
   - Sub-fases de construcción: **C1 Gastos+Personal: HECHA** (ver sección 4) →
     **C2 Stock+Compras: HECHA** → **C3 Ventas+Garantías+Trabajos: HECHA** →
-    **C4 Finanzas: HECHA** (ver sección 4) → C5 integraciones (barra de
-    navegación de 5, verificación final end-to-end, docs).
+    **C4 Finanzas: HECHA** → **C5 integraciones: HECHA**.
+    **LA AMPLIACIÓN COMPLETA (A+B+C) ESTÁ TERMINADA Y VERIFICADA** — falta
+    solo que el dueño la pruebe y se mergee a main para publicarla.

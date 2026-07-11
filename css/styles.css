@@ -208,9 +208,11 @@ button, input, textarea, select { font-family: inherit; }
 .mobile-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 14px 16px 10px;
 }
+.mobile-header .js-mobile-logo, .mobile-header .js-mobile-title { flex: 1; min-width: 0; }
+.mobile-header .logo-chip { align-self: flex-start; max-width: max-content; }
 .logo-chip {
   background: #FFFFFF;
   border: 1px solid #E2E8F4;
@@ -272,8 +274,8 @@ button, input, textarea, select { font-family: inherit; }
   background: #FFFFFF;
   border-top: 1px solid #E2E8F4;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  padding: 8px 6px calc(16px + env(safe-area-inset-bottom, 0px));
+  grid-template-columns: repeat(6, 1fr);
+  padding: 8px 2px calc(16px + env(safe-area-inset-bottom, 0px));
   align-items: end;
   z-index: 50;
 }
@@ -290,7 +292,7 @@ button, input, textarea, select { font-family: inherit; }
   border: none;
   min-height: 44px;
 }
-.tab-item span { font-size: 10px; font-weight: 700; }
+.tab-item span { font-size: 9.5px; font-weight: 700; }
 .tab-item.active { color: #2B57C8; }
 .tab-fab-wrap { display: flex; justify-content: center; }
 .fab {

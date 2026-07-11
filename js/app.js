@@ -417,7 +417,7 @@
       clientes: ['Clientes', D.clients.length + ' registrados · ' + debtClientsCount() + ' con deuda'],
       cliente: ['Cliente', ''],
       cobros: ['Cobros', 'Avisos de cobro y pendientes'],
-      registro: ['Registro mensual', 'Ingresos y gastos mes por mes'],
+      registro: ['Finanzas', 'Caja, resultado y registro mensual'],
       regmes: ['Detalle del mes', state.regMonth ? (monthName(state.regMonth) + ' ' + state.regMonth.slice(0, 4)) : ''],
       gastos: ['Gastos', 'Gastos del negocio'],
       personal: ['Personales', 'Tu equipo de trabajo'],
@@ -2621,10 +2621,10 @@
       '<div class="mes-bar"><div class="cob" style="width:' + mesPct + '%;"></div></div></div>' +
       '</div>';
 
-    // accesos: registro mensual y stock
+    // accesos: finanzas y stock
     html += '<button type="button" class="reg-open" data-go="registro">' +
-      '<span class="reg-open-main"><span class="reg-open-title">Registro mensual de ingresos</span>' +
-      '<span class="reg-open-sub">Facturado, cobrado y gastos, mes por mes</span></span>' +
+      '<span class="reg-open-main"><span class="reg-open-title">Finanzas del negocio</span>' +
+      '<span class="reg-open-sub">Caja, resultado, gastos y registro mensual</span></span>' +
       '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>';
     var nProds = (state.data.products || []).length;
     var nPend = pendingPurchases().length;
@@ -3824,7 +3824,7 @@
 
     // Pie con logo + versión
     html += '<div class="ajustes-footer"><img src="assets/jgm-logo.png" alt="JGM SERVICIOS">' +
-      '<span>Gestor de clientes y cobros · v0.1.0</span></div>';
+      '<span>Gestor de clientes, cobros y stock · v0.2.0</span></div>';
 
     box.innerHTML = html;
 
@@ -3913,10 +3913,11 @@
       s.classList.toggle('active', s.id === 'screen-' + view);
     });
 
-    // nav activa: Clientes queda resaltado en la ficha; Inicio en el registro
+    // nav activa: cada subpantalla resalta su pestaña madre
     var navView = view === 'cliente' ? 'clientes'
-      : (view === 'registro' || view === 'regmes' || view === 'gastos' || view === 'personal'
-        || view === 'stock' || view === 'producto' || view === 'compras' ? 'inicio' : view);
+      : (view === 'regmes' || view === 'gastos' || view === 'personal') ? 'registro'
+      : (view === 'producto' || view === 'compras') ? 'stock'
+      : view;
     document.querySelectorAll('[data-nav]').forEach(function (el) {
       if (el.classList.contains('nav-item') || el.classList.contains('tab-item')) {
         el.classList.toggle('active', el.getAttribute('data-nav') === navView);
