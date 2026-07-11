@@ -266,6 +266,43 @@ Fases del plan original (todas hechas):
   `openPurchaseModal/submitPurchase`, `openReceiveModal/submitReceive`,
   `openAdjustModal/submitAdjust`, `renderStock/renderProducto/renderCompras`.
 
+### Etapa C3 de la ampliación (2026-07-11) — Ventas, garantías y productos en trabajos
+
+- **Modelo**: `sales: [{ id, clientId /*obligatorio*/, date, credit,
+  items:[{ productId, qty, unitPrice, unitCost /*snapshot al vender*/,
+  warrantyMonths }], payments, dueDates }]` y `jobs[].items` con la misma
+  forma. El costo se congela al vender (la historia no cambia si después
+  cambia el costo del producto).
+- **Modal de venta** (`#modal-sale`, botones: "🛒 Vender" en Stock, "Vender
+  este producto" en la ficha del producto y "Vender producto del stock" en la
+  ficha del cliente): cliente **obligatorio** (por la garantía), filas de
+  productos (precio sugerido del catálogo al elegir, editable; garantía en
+  meses por item; botón "+ Motor y bomba (ambas)" que agrega los dos),
+  contado/crédito (crédito: seña + fecha de cobro), valida stock disponible.
+  Al guardar: descuenta stock, congela costo y **abre la ficha del cliente**.
+- **Trabajos con productos**: el campo precio pasó a ser **"Mano de obra"**;
+  sección "Productos vendidos en este trabajo" (mismas filas); **total del
+  trabajo = mano de obra + productos (suma automática)** y se guarda en
+  `j.price` (todo el código de saldos/pagos sigue igual). Al editar se
+  devuelven los items viejos y se aplican los nuevos; al borrar el trabajo o
+  una venta las unidades **vuelven al stock** (borrar un cliente NO devuelve
+  stock: se borra historial, lo vendido salió de verdad).
+- **Cobros unificados**: `buildAlerts`/`jobsSinFecha` ahora incluyen ventas a
+  crédito (etiqueta "Venta: …"); modal de pago y de posponer generalizados
+  (`payDebtor(kind,id)`, `openPayKind`, `openPostKind`; el selector del pago
+  por cliente mezcla trabajos y ventas). `clientBalances`, `totalPending`,
+  `urgentCounts`, el registro mensual, el detalle del mes, la tarjeta del mes
+  de Inicio, el estado de cuenta y el recordatorio de WhatsApp incluyen
+  ventas.
+- **Garantías**: `warrantyInfo(fecha, meses)`; chips 🛡 vigente/vencida en las
+  tarjetas de venta y de trabajo; la ficha del producto muestra "Garantías
+  vigentes" (cliente + vencimiento) y el historial "Ventas de este producto"
+  (directas y dentro de trabajos).
+- **Las fichas del día a día NO muestran costos ni ganancia** — solo precios
+  de venta (decisión del dueño; la ganancia vive en el estado de resultados).
+- `absorbOverlay(modal)`: generalización del fix de historial de C2, aplicado
+  también a guardar trabajo nuevo y venta (modal → ficha sin carrera).
+
 ## 5. Modelo de datos
 
 Clave de `localStorage`: **`jgm_gestor_v1`**. Estructura:
@@ -306,6 +343,15 @@ Clave de `localStorage`: **`jgm_gestor_v1`**. Estructura:
     totalFinal,   // costo final con flete/aduana (se carga al recibir)
     items: [{ productId, qty, unitBase, unitCost }]  // unitCost = prorrateado
   }],
+  sales: [{                                  // ventas de productos (Etapa C3)
+    id, clientId,          // SIEMPRE con cliente (por la garantía)
+    date, credit,
+    items: [{ productId, qty, unitPrice, unitCost /*snapshot*/, warrantyMonths }],
+    payments: [{ id, amount, date, note }],  // misma mecánica que trabajos
+    dueDates: [{ id, date, done }]
+  }],
+  // jobs[].items: misma forma que sales[].items (productos vendidos en el
+  // trabajo; j.price = mano de obra + productos, suma automática)
   settings: {
     categories: [...], expenseCategories: [...], remindDays, notifEnabled,
     devices: [{ id, name, added }]   // dispositivos autorizados (máx. 4)
@@ -478,6 +524,6 @@ por el dueño — no re-preguntar.
   - **Solo guaraníes.** Los precios reales de China los va a cargar el
     dueño solo cuando los tenga (la app queda lista; nada pre-cargado).
   - Sub-fases de construcción: **C1 Gastos+Personal: HECHA** (ver sección 4) →
-    **C2 Stock+Compras: HECHA** (ver sección 4) → C3
-    Ventas+Garantías+Trabajos → C4 Finanzas → C5 integraciones (respaldos con
-    todo lo nuevo, Ajustes, seed demo, reset, popstate, bump de sw.js).
+    **C2 Stock+Compras: HECHA** → **C3 Ventas+Garantías+Trabajos: HECHA**
+    (ver sección 4) → C4 Finanzas → C5 integraciones (respaldos con todo lo
+    nuevo, Ajustes, seed demo, reset, popstate, bump de sw.js).

@@ -223,8 +223,19 @@
               <input type="date" id="jf-date">
             </div>
             <div>
-              <div class="field-label">Precio (₲) *</div>
+              <div class="field-label" id="jf-price-label">Mano de obra (₲) *</div>
               <input id="jf-price" inputmode="numeric" autocomplete="off" class="mono-input" placeholder="14.500.000">
+            </div>
+          </div>
+          <div>
+            <div class="field-label">Productos vendidos en este trabajo (del stock)</div>
+            <div id="jf-items"></div>
+            <div class="set-btn-row" style="margin-top:6px;">
+              <button type="button" class="set-btn-outline" id="jf-add-item">+ Producto del stock</button>
+            </div>
+            <div class="preview-box" id="jf-total-box" style="margin-top:8px;">
+              <span>Total del trabajo (mano de obra + productos)</span>
+              <span class="preview-amount" id="jf-total">₲ 0</span>
             </div>
           </div>
           <div>
@@ -383,6 +394,67 @@
           <div class="modal-actions">
             <button type="button" class="btn-cancel" id="ef-cancel">Cancelar</button>
             <button type="button" class="btn-save" id="ef-save">Guardar gasto</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Modal venta ===== -->
+  <div class="modal-overlay" id="modal-sale" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="vf-title">
+      <div class="modal-body">
+        <div class="modal-title" id="vf-title">Vender producto</div>
+        <div class="form-stack">
+          <div>
+            <div class="field-label">Cliente * <span class="field-hint">(siempre con cliente, por la garantía)</span></div>
+            <select id="vf-client"><option value="">Elegir cliente…</option></select>
+          </div>
+          <div>
+            <div class="field-label">Productos vendidos</div>
+            <div id="vf-items"></div>
+            <div class="set-btn-row" style="margin-top:6px;">
+              <button type="button" class="set-btn-outline" id="vf-add-item">+ Producto</button>
+              <button type="button" class="set-btn-outline" id="vf-add-both">+ Motor y bomba (ambas)</button>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <div class="field-label">Fecha de venta</div>
+              <input type="date" id="vf-date">
+            </div>
+            <div>
+              <div class="field-label">Forma de pago</div>
+              <div class="segmented">
+                <div id="vf-contado">Contado</div>
+                <div id="vf-credito">Crédito</div>
+              </div>
+            </div>
+          </div>
+          <div class="form-stack" id="vf-credit-block">
+            <div class="grid-2">
+              <div>
+                <div class="field-label">Seña / entrega inicial</div>
+                <input id="vf-down" inputmode="numeric" autocomplete="off" class="mono-input" placeholder="0">
+              </div>
+              <div>
+                <div class="field-label">Fecha de cobro</div>
+                <input type="date" id="vf-due">
+              </div>
+            </div>
+          </div>
+          <div class="preview-box">
+            <span>Total de la venta</span>
+            <span class="preview-amount" id="vf-total">₲ 0</span>
+          </div>
+          <div class="preview-box green" id="vf-saldo-box" hidden>
+            <span>Saldo que quedará</span>
+            <span class="preview-amount red" id="vf-saldo">₲ 0</span>
+          </div>
+          <div class="form-err" id="vf-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="vf-cancel">Cancelar</button>
+            <button type="button" class="btn-save btn-save-green" id="vf-save">Guardar venta</button>
           </div>
         </div>
       </div>

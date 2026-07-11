@@ -62,6 +62,29 @@
     if (!j.credit) return 0;
     return Math.max(0, (Number(j.price) || 0) - jobPaid(j));
   }
+  // Ventas de productos (Etapa C3): misma mecánica de saldo que los trabajos
+  function saleTotal(s) {
+    return (s.items || []).reduce(function (a, it) { return a + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0); }, 0);
+  }
+  function salePaid(s) {
+    if (!s.credit) return saleTotal(s);
+    return (s.payments || []).reduce(function (a, p) { return a + (Number(p.amount) || 0); }, 0);
+  }
+  function saleBalance(s) {
+    if (!s.credit) return 0;
+    return Math.max(0, saleTotal(s) - salePaid(s));
+  }
+  // Costo (snapshot) de lo vendido en una venta o en los items de un trabajo
+  function itemsCost(items) {
+    return (items || []).reduce(function (a, it) { return a + (Number(it.qty) || 0) * (Number(it.unitCost) || 0); }, 0);
+  }
+  // Garantía de un item vendido: null si no tiene
+  function warrantyInfo(dateIso, months) {
+    var m = Number(months) || 0;
+    if (m <= 0 || !dateIso) return null;
+    var until = addMonthsIso(dateIso, m);
+    return { until: until, active: until >= todayIso() };
+  }
 
   // ===== Datos =====
   function defaultCats() { return ['Perforación', 'Mantenimiento', 'Motobomba', 'Pesca de equipo', 'Otro']; }
@@ -77,6 +100,7 @@
       staff: [],
       products: [],
       purchases: [],
+      sales: [],
       settings: { categories: defaultCats(), expenseCategories: defaultExpenseCats(), productCategories: defaultProductCats(), remindDays: 3, notifEnabled: false, devices: [] },
       demo: false
     };
@@ -114,7 +138,7 @@
     ];
     var products = [
       { id: 'pr1', name: 'Motor sumergible 1.5 HP (ejemplo)', category: 'Motor', notes: '', photos: [], cost: 1250000, price: 1900000, stock: 4, minStock: 1, adjusts: [] },
-      { id: 'pr2', name: 'Bomba sumergible 1.5 HP (ejemplo)', category: 'Bomba', notes: '', photos: [], cost: 750000, price: 1200000, stock: 4, minStock: 1, adjusts: [{ id: 'aj1', date: d(-10), qty: 1, reason: 'Llegó con el cuerpo rajado' }] },
+      { id: 'pr2', name: 'Bomba sumergible 1.5 HP (ejemplo)', category: 'Bomba', notes: '', photos: [], cost: 750000, price: 1200000, stock: 3, minStock: 1, adjusts: [{ id: 'aj1', date: d(-10), qty: 1, reason: 'Llegó con el cuerpo rajado' }] },
       { id: 'pr3', name: 'Relé falta de fase (ejemplo)', category: 'Relé', notes: '', photos: [], cost: 125000, price: 220000, stock: 1, minStock: 2, adjusts: [] }
     ];
     var purchases = [
@@ -133,6 +157,22 @@
         items: [{ productId: 'pr3', qty: 30, unitBase: 100000 }]
       }
     ];
+    var sales = [
+      {
+        id: 'v1', clientId: 'c6', date: d(-5), credit: false,
+        items: [{ productId: 'pr3', qty: 1, unitPrice: 220000, unitCost: 125000, warrantyMonths: 6 }],
+        payments: [], dueDates: []
+      },
+      {
+        id: 'v2', clientId: 'c4', date: d(-3), credit: true,
+        items: [
+          { productId: 'pr1', qty: 1, unitPrice: 1900000, unitCost: 1250000, warrantyMonths: 12 },
+          { productId: 'pr2', qty: 1, unitPrice: 1200000, unitCost: 750000, warrantyMonths: 12 }
+        ],
+        payments: [{ id: 'vp1', amount: 1000000, date: d(-3), note: 'Seña' }],
+        dueDates: [{ id: 'vd1', date: d(11), done: false }]
+      }
+    ];
     return {
       clients: clients,
       jobs: jobs,
@@ -140,6 +180,7 @@
       staff: staff,
       products: products,
       purchases: purchases,
+      sales: sales,
       settings: { categories: defaultCats(), expenseCategories: defaultExpenseCats(), productCategories: defaultProductCats(), remindDays: 3, notifEnabled: false, devices: [] },
       demo: true
     };
@@ -152,6 +193,7 @@
     if (!Array.isArray(d.staff)) d.staff = [];
     if (!Array.isArray(d.products)) d.products = [];
     if (!Array.isArray(d.purchases)) d.purchases = [];
+    if (!Array.isArray(d.sales)) d.sales = [];
     if (!Array.isArray(d.settings.devices)) d.settings.devices = [];
     if (!Array.isArray(d.settings.categories)) d.settings.categories = defaultCats();
     if (!Array.isArray(d.settings.expenseCategories)) d.settings.expenseCategories = defaultExpenseCats();
@@ -313,7 +355,10 @@
       if (!state.viewer) histConsume();
     }
     mutate(function (d) {
-      var o = kind === 'client' ? d.clients.find(function (x) { return x.id === id; }) : d.jobs.find(function (x) { return x.id === id; });
+      var o = kind === 'client' ? d.clients.find(function (x) { return x.id === id; })
+        : kind === 'exp' ? (d.expenses || []).find(function (x) { return x.id === id; })
+        : kind === 'prod' ? (d.products || []).find(function (x) { return x.id === id; })
+        : d.jobs.find(function (x) { return x.id === id; });
       if (o) o.photos = (o.photos || []).filter(function (p) { return p.id !== phId; });
     });
   }
@@ -327,26 +372,37 @@
     (state.data.jobs || []).forEach(function (j) {
       byClient[j.clientId] = (byClient[j.clientId] || 0) + jobBalance(j);
     });
+    (state.data.sales || []).forEach(function (s) {
+      byClient[s.clientId] = (byClient[s.clientId] || 0) + saleBalance(s);
+    });
     return byClient;
   }
   function jobsOf(cid) {
     return (state.data.jobs || []).filter(function (j) { return j.clientId === cid; });
   }
+  function salesOf(cid) {
+    return (state.data.sales || []).filter(function (s) { return s.clientId === cid; });
+  }
   function urgentCounts() {
     var today = todayIso();
     var venc = 0, hoy = 0;
-    (state.data.jobs || []).forEach(function (j) {
-      if (!j.credit || jobBalance(j) <= 0) return;
-      (j.dueDates || []).forEach(function (x) {
-        if (x.done) return;
-        var diff = daysBetween(today, x.date);
-        if (diff < 0) venc++; else if (diff === 0) hoy++;
+    var scan = function (list, balFn) {
+      (list || []).forEach(function (x) {
+        if (!x.credit || balFn(x) <= 0) return;
+        (x.dueDates || []).forEach(function (dd) {
+          if (dd.done) return;
+          var diff = daysBetween(today, dd.date);
+          if (diff < 0) venc++; else if (diff === 0) hoy++;
+        });
       });
-    });
+    };
+    scan(state.data.jobs, jobBalance);
+    scan(state.data.sales, saleBalance);
     return { venc: venc, hoy: hoy };
   }
   function totalPending() {
-    return (state.data.jobs || []).reduce(function (a, j) { return a + jobBalance(j); }, 0);
+    return (state.data.jobs || []).reduce(function (a, j) { return a + jobBalance(j); }, 0) +
+      (state.data.sales || []).reduce(function (a, s) { return a + saleBalance(s); }, 0);
   }
   function debtClientsCount() {
     var bal = clientBalances();
@@ -399,6 +455,13 @@
     else if (d < curViewDepth) { histConsume(curViewDepth - d); }
     curViewDepth = d;
   }
+  // Oculta un modal SIN consumir su entrada del historial: la entrada pasa a
+  // contar como un nivel de vista y la navegación siguiente ajusta el resto.
+  // Evita la carrera entre el history.go(-1) asíncrono del cierre y el
+  // pushState de navegar, que desfasaba el botón "atrás" de Android.
+  function absorbOverlay(el) {
+    if (!el.hidden) { el.hidden = true; curViewDepth++; }
+  }
 
   // ===== Toast =====
   var toastEl = document.getElementById('toast');
@@ -439,12 +502,8 @@
     render();
     window.scrollTo(0, 0);
   }
-  // reuseHist=true: la entrada de historial ya existente (p. ej. la del modal
-  // que se acaba de ocultar) pasa a representar esta vista. Evita la carrera
-  // entre el history.go(-1) asíncrono del cierre y el pushState de navegar,
-  // que desfasaba el historial y hacía que "atrás" pudiera salir de la app.
-  function goClient(id, reuseHist) {
-    if (reuseHist) curViewDepth = viewDepthOf('cliente'); else syncViewHistory('cliente');
+  function goClient(id) {
+    syncViewHistory('cliente');
     state.view = 'cliente';
     state.clientId = id;
     state.expandedJobId = null;
@@ -460,8 +519,8 @@
     render();
     window.scrollTo(0, 0);
   }
-  function goProduct(id, reuseHist) {
-    if (reuseHist) curViewDepth = viewDepthOf('producto'); else syncViewHistory('producto');
+  function goProduct(id) {
+    syncViewHistory('producto');
     state.view = 'producto';
     state.productId = id;
     state.confirmKey = null;
@@ -512,9 +571,8 @@
       }
     });
     if (isNew && newId) {
-      // el modal se oculta y su entrada de historial pasa a ser la de la ficha
-      modalEl.hidden = true;
-      goClient(newId, true);
+      absorbOverlay(modalEl);
+      goClient(newId);
       toast('Cliente guardado.');
     } else {
       closeClientModal();
@@ -531,6 +589,117 @@
     });
   }
 
+  // ===== Filas de productos vendidos (compartidas por trabajo y venta) =====
+  function soldItemsTotal(items) {
+    return (items || []).reduce(function (a, it) { return a + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0); }, 0);
+  }
+  function productOptionsStock(selId) {
+    var prods = (state.data.products || []).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+    return '<option value="">Elegir producto…</option>' + prods.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (selId === p.id ? ' selected' : '') + '>' +
+        esc(p.name + ' (quedan ' + (Number(p.stock) || 0) + ')') + '</option>';
+    }).join('');
+  }
+  function renderSoldItemRows(boxId, items, onChange) {
+    var box = document.getElementById(boxId);
+    if (!(items || []).length) {
+      box.innerHTML = '<div class="set-hint">Sin productos del stock en esta carga.</div>';
+      return;
+    }
+    box.innerHTML = items.map(function (it, i) {
+      return '<div class="sale-item">' +
+        '<div class="sale-item-top"><select data-si-prod="' + i + '">' + productOptionsStock(it.productId) + '</select>' +
+        '<button type="button" class="bu-rm" data-si-rm="' + i + '">✕</button></div>' +
+        '<div class="sale-item-grid">' +
+        '<label>Cant.<input type="number" min="1" max="999" value="' + esc(String(it.qty || 1)) + '" data-si-qty="' + i + '"></label>' +
+        '<label>Precio c/u (₲)<input inputmode="numeric" class="mono-input" value="' + (it.unitPrice ? esc(dots(it.unitPrice)) : '') + '" placeholder="0" data-si-price="' + i + '"></label>' +
+        '<label>Garantía (meses)<input type="number" min="0" max="120" value="' + esc(String(it.warrantyMonths || 0)) + '" placeholder="0" data-si-war="' + i + '"></label>' +
+        '</div></div>';
+    }).join('');
+    box.querySelectorAll('[data-si-rm]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        items.splice(Number(el.getAttribute('data-si-rm')), 1);
+        renderSoldItemRows(boxId, items, onChange);
+        onChange();
+      });
+    });
+    box.querySelectorAll('[data-si-prod]').forEach(function (el) {
+      el.addEventListener('change', function () {
+        var it = items[Number(el.getAttribute('data-si-prod'))];
+        it.productId = el.value;
+        var p = productById(el.value);
+        // al elegir producto, sugerir su precio de venta del catálogo
+        if (p && p.price) {
+          it.unitPrice = Number(p.price) || 0;
+          renderSoldItemRows(boxId, items, onChange);
+        }
+        onChange();
+      });
+    });
+    box.querySelectorAll('[data-si-qty]').forEach(function (el) {
+      el.addEventListener('input', function () {
+        items[Number(el.getAttribute('data-si-qty'))].qty = Number(el.value) || 0;
+        onChange();
+      });
+    });
+    box.querySelectorAll('[data-si-price]').forEach(function (el) {
+      el.addEventListener('input', function () {
+        var n = parseMoney(el.value);
+        el.value = n ? dots(n) : '';
+        items[Number(el.getAttribute('data-si-price'))].unitPrice = n;
+        onChange();
+      });
+    });
+    box.querySelectorAll('[data-si-war]').forEach(function (el) {
+      el.addEventListener('input', function () {
+        items[Number(el.getAttribute('data-si-war'))].warrantyMonths = Math.max(0, Number(el.value) || 0);
+        onChange();
+      });
+    });
+  }
+  // Valida filas y controla stock disponible. extraStock: unidades que se
+  // devolverían primero (al editar un trabajo, las de sus items originales).
+  function validateSoldItems(items, extraStock) {
+    if (!(items || []).length) return { items: [] };
+    var wanted = {};
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (!it.productId) return { error: 'Elegí el producto en todas las filas.' };
+      if (!(Number(it.qty) > 0)) return { error: 'Cargá la cantidad en todas las filas.' };
+      if (!(Number(it.unitPrice) > 0)) return { error: 'Cargá el precio de venta en todas las filas.' };
+      wanted[it.productId] = (wanted[it.productId] || 0) + Number(it.qty);
+    }
+    var bad = null;
+    Object.keys(wanted).forEach(function (pid) {
+      if (bad) return;
+      var p = productById(pid);
+      var avail = (p ? (Number(p.stock) || 0) : 0) + ((extraStock && extraStock[pid]) || 0);
+      if (!p) { bad = 'Uno de los productos ya no existe en el catálogo.'; return; }
+      if (wanted[pid] > avail) bad = 'No hay stock suficiente de ' + p.name + ' (disponible: ' + avail + ').';
+    });
+    if (bad) return { error: bad };
+    return {
+      items: items.map(function (it) {
+        var p = productById(it.productId);
+        return {
+          productId: it.productId,
+          qty: Number(it.qty),
+          unitPrice: Number(it.unitPrice),
+          // el costo se congela al vender; si la fila viene de una edición, conserva el original
+          unitCost: it.unitCost != null ? Number(it.unitCost) : (p ? Number(p.cost) || 0 : 0),
+          warrantyMonths: Number(it.warrantyMonths) || 0
+        };
+      })
+    };
+  }
+  // Aplica al stock los movimientos de items vendidos (sign: -1 vende, +1 devuelve)
+  function applySoldItems(d, items, sign) {
+    (items || []).forEach(function (it) {
+      var p = (d.products || []).find(function (x) { return x.id === it.productId; });
+      if (p) p.stock = Math.max(0, (Number(p.stock) || 0) + sign * (Number(it.qty) || 0));
+    });
+  }
+
   // ===== Modal trabajo =====
   var jobModalEl = document.getElementById('modal-job');
   var jForm = {};
@@ -544,7 +713,8 @@
       category: S.categories[0] || 'Otro',
       dues: [],
       dueNew: addDaysIso(todayIso(), 30),
-      credit: true
+      credit: true,
+      items: []
     };
     document.getElementById('jf-title').textContent = 'Nuevo trabajo';
     document.getElementById('jf-desc').value = '';
@@ -556,6 +726,10 @@
     openJobModalCommon();
   }
   function openEditJob(j) {
+    var items = (j.items || []).map(function (it) {
+      return { productId: it.productId, qty: it.qty, unitPrice: it.unitPrice, unitCost: it.unitCost, warrantyMonths: it.warrantyMonths || 0 };
+    });
+    var labor = Math.max(0, (Number(j.price) || 0) - soldItemsTotal(items));
     jForm = {
       id: j.id,
       clientId: j.clientId,
@@ -563,15 +737,16 @@
       category: j.category,
       dues: (j.dueDates || []).filter(function (x) { return !x.done; }).map(function (x) { return { id: x.id, date: x.date }; }),
       dueNew: addDaysIso(todayIso(), 30),
-      credit: !!j.credit
+      credit: !!j.credit,
+      items: items
     };
     document.getElementById('jf-title').textContent = 'Editar trabajo';
     document.getElementById('jf-desc').value = j.desc || '';
     document.getElementById('jf-date').value = j.date || todayIso();
-    document.getElementById('jf-price').value = dots(j.price);
+    document.getElementById('jf-price').value = labor ? dots(labor) : '';
     document.getElementById('jf-down').value = '';
     document.getElementById('jf-remind').value = String(j.remind != null ? j.remind : state.data.settings.remindDays);
-    document.getElementById('jf-saldo-label').textContent = 'Saldo actual con este precio';
+    document.getElementById('jf-saldo-label').textContent = 'Saldo actual con este total';
     openJobModalCommon();
   }
   function openJobModalCommon() {
@@ -632,10 +807,17 @@
         renderJobModalDynamic();
       });
     });
+    // productos vendidos dentro del trabajo
+    renderSoldItemRows('jf-items', jForm.items, updateJobPreview);
     updateJobPreview();
   }
+  function jobFormTotal() {
+    return parseMoney(document.getElementById('jf-price').value) + soldItemsTotal(jForm.items);
+  }
   function updateJobPreview() {
-    var price = parseMoney(document.getElementById('jf-price').value);
+    var total = jobFormTotal();
+    document.getElementById('jf-total').textContent = fmtG(total);
+    document.getElementById('jf-total-box').style.display = (jForm.items || []).length ? '' : 'none';
     var minus;
     if (jForm.id) {
       var j = state.data.jobs.find(function (x) { return x.id === jForm.id; });
@@ -643,18 +825,28 @@
     } else {
       minus = parseMoney(document.getElementById('jf-down').value);
     }
-    document.getElementById('jf-saldo-preview').textContent = fmtG(Math.max(0, price - minus));
+    document.getElementById('jf-saldo-preview').textContent = fmtG(Math.max(0, total - minus));
   }
   function closeJobModal() { if (!jobModalEl.hidden) { jobModalEl.hidden = true; histConsume(); } }
   function submitJob() {
     var errEl = document.getElementById('jf-err');
     var showErr = function (m) { errEl.textContent = m; errEl.hidden = false; };
     if (!jForm.locked) jForm.clientId = document.getElementById('jf-client').value;
-    var price = parseMoney(document.getElementById('jf-price').value);
+    var labor = parseMoney(document.getElementById('jf-price').value);
     var down = parseMoney(document.getElementById('jf-down').value);
     if (!jForm.clientId) { showErr('Elegí un cliente.'); return; }
-    if (price <= 0) { showErr('Cargá el precio del trabajo.'); return; }
-    if (jForm.credit && !jForm.id && down > price) { showErr('La seña no puede superar el precio.'); return; }
+    // stock disponible: al editar, primero se "devuelven" los items originales
+    var oldJob = jForm.id ? state.data.jobs.find(function (x) { return x.id === jForm.id; }) : null;
+    var extraStock = {};
+    ((oldJob && oldJob.items) || []).forEach(function (it) {
+      extraStock[it.productId] = (extraStock[it.productId] || 0) + (Number(it.qty) || 0);
+    });
+    var checked = validateSoldItems(jForm.items, extraStock);
+    if (checked.error) { showErr(checked.error); return; }
+    var items = checked.items;
+    var price = labor + soldItemsTotal(items); // el precio del trabajo = mano de obra + productos
+    if (price <= 0) { showErr('Cargá la mano de obra o agregá productos.'); return; }
+    if (jForm.credit && !jForm.id && down > price) { showErr('La seña no puede superar el total.'); return; }
     var desc = document.getElementById('jf-desc').value;
     var date = document.getElementById('jf-date').value || todayIso();
     var remind = Math.max(0, Number(document.getElementById('jf-remind').value) || 0);
@@ -666,46 +858,179 @@
       if (jForm.id) {
         var j = d.jobs.find(function (x) { return x.id === jForm.id; });
         if (!j) return;
+        applySoldItems(d, j.items, +1);   // devolver el stock de los items anteriores
+        applySoldItems(d, items, -1);     // descontar el de los nuevos
         j.category = jForm.category; j.desc = desc; j.date = date; j.price = price; j.credit = credit; j.remind = remind;
+        j.items = items;
         var done = (j.dueDates || []).filter(function (x) { return x.done; });
         j.dueDates = credit ? done.concat(dues.map(function (x) { return { id: x.id || uid(), date: x.date, done: false }; })) : done;
+        recomputeDone(j);
       } else {
         var payments = [];
         if (credit && down > 0) payments.push({ id: uid(), amount: down, date: date, note: 'Seña' });
+        applySoldItems(d, items, -1);
         d.jobs.push({
           id: uid(), clientId: cid, category: jForm.category, desc: desc, date: date, price: price,
           credit: credit, remind: remind, payments: payments,
           dueDates: credit ? dues.map(function (x) { return { id: uid(), date: x.date, done: false }; }) : [],
+          items: items,
           photos: []
         });
       }
     });
-    closeJobModal();
-    if (isNew) { goClient(cid); toast('Trabajo guardado.'); }
-    else toast('Trabajo actualizado.');
+    if (isNew) {
+      absorbOverlay(jobModalEl);
+      goClient(cid);
+      toast('Trabajo guardado.');
+    } else {
+      closeJobModal();
+      toast('Trabajo actualizado.');
+    }
   }
 
-  // ===== Modal pago =====
+  // ===== Modal venta (siempre con cliente, por la garantía) =====
+  var saleModalEl = document.getElementById('modal-sale');
+  var vForm = {};
+  function renderSaleModalDynamic() {
+    document.getElementById('vf-contado').classList.toggle('active', !vForm.credit);
+    document.getElementById('vf-credito').classList.toggle('active', vForm.credit);
+    document.getElementById('vf-credit-block').style.display = vForm.credit ? '' : 'none';
+    renderSoldItemRows('vf-items', vForm.items, updateSalePreview);
+    updateSalePreview();
+  }
+  function updateSalePreview() {
+    var total = soldItemsTotal(vForm.items);
+    document.getElementById('vf-total').textContent = fmtG(total);
+    var saldoBox = document.getElementById('vf-saldo-box');
+    saldoBox.hidden = !vForm.credit;
+    if (vForm.credit) {
+      var down = parseMoney(document.getElementById('vf-down').value);
+      document.getElementById('vf-saldo').textContent = fmtG(Math.max(0, total - down));
+    }
+  }
+  function openSaleModal(opts) {
+    opts = opts || {};
+    if (!(state.data.products || []).length) {
+      toast('Primero cargá productos en el catálogo de Stock.');
+      return;
+    }
+    if (!(state.data.clients || []).length) {
+      toast('Primero cargá al cliente — las ventas siempre van con cliente por la garantía.');
+      openClientModal(null);
+      return;
+    }
+    var first = opts.productId ? productById(opts.productId) : null;
+    vForm = {
+      clientId: opts.clientId || '',
+      credit: false,
+      items: [{ productId: opts.productId || '', qty: 1, unitPrice: first ? (Number(first.price) || 0) : 0, warrantyMonths: 0 }]
+    };
+    var sel = document.getElementById('vf-client');
+    sel.innerHTML = '<option value="">Elegir cliente…</option>' + state.data.clients.slice()
+      .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); })
+      .map(function (c) { return '<option value="' + esc(c.id) + '">' + esc(c.name) + '</option>'; }).join('');
+    sel.value = vForm.clientId || '';
+    document.getElementById('vf-date').value = todayIso();
+    document.getElementById('vf-down').value = '';
+    document.getElementById('vf-due').value = addDaysIso(todayIso(), 30);
+    var err = document.getElementById('vf-err');
+    err.hidden = true;
+    err.textContent = '';
+    renderSaleModalDynamic();
+    if (saleModalEl.hidden) histPush();
+    saleModalEl.hidden = false;
+  }
+  function closeSaleModal() { if (!saleModalEl.hidden) { saleModalEl.hidden = true; histConsume(); } }
+  function submitSale() {
+    var errEl = document.getElementById('vf-err');
+    var showErr = function (m) { errEl.textContent = m; errEl.hidden = false; };
+    var cid = document.getElementById('vf-client').value;
+    if (!cid) { showErr('Elegí el cliente — la fecha de venta queda ligada a él para la garantía.'); return; }
+    if (!(vForm.items || []).length) { showErr('Agregá al menos un producto.'); return; }
+    var checked = validateSoldItems(vForm.items, null);
+    if (checked.error) { showErr(checked.error); return; }
+    var items = checked.items;
+    var total = soldItemsTotal(items);
+    if (total <= 0) { showErr('Cargá el precio de venta.'); return; }
+    var date = document.getElementById('vf-date').value || todayIso();
+    var credit = vForm.credit;
+    var down = credit ? parseMoney(document.getElementById('vf-down').value) : 0;
+    if (down > total) { showErr('La seña no puede superar el total.'); return; }
+    var due = credit ? document.getElementById('vf-due').value : '';
+    var sale = {
+      id: uid(), clientId: cid, date: date, credit: credit,
+      items: items,
+      payments: credit && down > 0 ? [{ id: uid(), amount: down, date: date, note: 'Seña' }] : [],
+      dueDates: credit && due && down < total ? [{ id: uid(), date: due, done: false }] : []
+    };
+    mutate(function (d) {
+      applySoldItems(d, items, -1);
+      d.sales.push(sale);
+      recomputeSaleDone(sale);
+    });
+    absorbOverlay(saleModalEl);
+    goClient(cid);
+    vib(30);
+    toast(credit ? 'Venta a crédito registrada — la vas a ver en Cobros.' : 'Venta registrada.');
+  }
+  // Borrar una venta = deshacerla: las unidades vuelven al stock
+  function delSale(id) {
+    var s = (state.data.sales || []).find(function (x) { return x.id === id; });
+    if (!s) return;
+    mutate(function (d) {
+      var sx = (d.sales || []).find(function (x) { return x.id === id; });
+      if (!sx) return;
+      applySoldItems(d, sx.items, +1);
+      d.sales = d.sales.filter(function (x) { return x.id !== id; });
+    });
+    toast('Venta eliminada — las unidades volvieron al stock.');
+  }
+
+  // ===== Modal pago (sirve para trabajos Y ventas) =====
   var payModalEl = document.getElementById('modal-pay');
   var pForm = {};
-  // Marca las fechas de cobro como cumplidas solo si el trabajo está saldado
+  // Marca las fechas de cobro como cumplidas solo si el trabajo/venta está saldado
   function recomputeDone(j) {
     var paid = (j.payments || []).reduce(function (a, p) { return a + (Number(p.amount) || 0); }, 0);
     var paidOff = paid >= (Number(j.price) || 0);
     (j.dueDates || []).forEach(function (x) { x.done = paidOff; });
     return paidOff;
   }
-  function openPay(jobId, payId) {
-    var j = state.data.jobs.find(function (x) { return x.id === jobId; });
-    if (!j) return;
-    var c = state.data.clients.find(function (x) { return x.id === j.clientId; });
-    var pay = payId ? (j.payments || []).find(function (x) { return x.id === payId; }) : null;
+  function recomputeSaleDone(s) {
+    var paidOff = salePaid(s) >= saleTotal(s);
+    (s.dueDates || []).forEach(function (x) { x.done = paidOff; });
+    return paidOff;
+  }
+  // El "deudor" que se está cobrando: trabajo ('job') o venta ('sale')
+  function payDebtor(kind, id, data) {
+    var D = data || state.data;
+    return kind === 'sale'
+      ? (D.sales || []).find(function (x) { return x.id === id; })
+      : (D.jobs || []).find(function (x) { return x.id === id; });
+  }
+  function payDebtorLabel(kind, x) {
+    if (kind === 'sale') {
+      var names = (x.items || []).map(function (it) {
+        var p = productById(it.productId);
+        return (p ? p.name : 'producto') + (it.qty > 1 ? ' ×' + it.qty : '');
+      }).join(' + ');
+      return 'Venta: ' + (names || 'productos');
+    }
+    return x.desc || x.category;
+  }
+  function payDebtorTotal(kind, x) { return kind === 'sale' ? saleTotal(x) : (Number(x.price) || 0); }
+  function payDebtorBalance(kind, x) { return kind === 'sale' ? saleBalance(x) : jobBalance(x); }
+  function openPayKind(kind, id, payId) {
+    var x = payDebtor(kind, id);
+    if (!x) return;
+    var c = state.data.clients.find(function (y) { return y.id === x.clientId; });
+    var pay = payId ? (x.payments || []).find(function (y) { return y.id === payId; }) : null;
     if (payId && !pay) return;
-    pForm = { jobId: jobId, payId: payId || null };
+    pForm = { kind: kind, id: id, payId: payId || null };
     document.getElementById('pf-title').textContent = pay ? 'Editar pago' : 'Registrar pago';
     document.getElementById('pf-save').textContent = pay ? 'Guardar cambios' : 'Guardar pago';
-    document.getElementById('pf-sub').textContent = (c ? c.name : '') + ' — ' + (j.desc || j.category);
-    document.getElementById('pf-saldo').textContent = fmtG(jobBalance(j));
+    document.getElementById('pf-sub').textContent = (c ? c.name : '') + ' — ' + payDebtorLabel(kind, x);
+    document.getElementById('pf-saldo').textContent = fmtG(payDebtorBalance(kind, x));
     document.getElementById('pf-amount').value = pay ? dots(pay.amount) : '';
     document.getElementById('pf-date').value = pay ? pay.date : todayIso();
     document.getElementById('pf-note').value = pay ? (pay.note || '') : '';
@@ -718,42 +1043,46 @@
     payModalEl.hidden = false;
     document.getElementById('pf-amount').focus();
   }
+  function openPay(jobId, payId) { openPayKind('job', jobId, payId); }
+  function openPaySale(saleId, payId) { openPayKind('sale', saleId, payId); }
   // Registrar pago desde la ficha del cliente, sin esperar fechas de cobro:
-  // si tiene un solo trabajo con saldo va directo; si tiene varios, muestra
-  // un selector adentro del mismo modal.
+  // junta trabajos Y ventas con saldo; con varios, muestra un selector.
   function openPayForClient(cid) {
-    var withDebt = jobsOf(cid).filter(function (j) { return j.credit && jobBalance(j) > 0; });
+    var withDebt = [];
+    jobsOf(cid).forEach(function (j) { if (j.credit && jobBalance(j) > 0) withDebt.push({ kind: 'job', x: j }); });
+    salesOf(cid).forEach(function (s) { if (s.credit && saleBalance(s) > 0) withDebt.push({ kind: 'sale', x: s }); });
     if (!withDebt.length) { toast('Este cliente está al día — no tiene saldos pendientes.'); return; }
-    var firstPend = function (j) {
-      var p = (j.dueDates || []).filter(function (x) { return !x.done; })
-        .map(function (x) { return x.date; }).sort();
+    var firstPend = function (x) {
+      var p = (x.dueDates || []).filter(function (y) { return !y.done; })
+        .map(function (y) { return y.date; }).sort();
       return p.length ? p[0] : '9999-12-31';
     };
     withDebt.sort(function (a, b) {
-      var fa = firstPend(a), fb = firstPend(b);
+      var fa = firstPend(a.x), fb = firstPend(b.x);
       if (fa !== fb) return fa < fb ? -1 : 1;
-      return a.date < b.date ? -1 : 1;
+      return (a.x.date || '') < (b.x.date || '') ? -1 : 1;
     });
-    openPay(withDebt[0].id);
+    openPayKind(withDebt[0].kind, withDebt[0].x.id);
     if (withDebt.length > 1) {
       var sel = document.getElementById('pf-job');
-      sel.innerHTML = withDebt.map(function (j) {
-        return '<option value="' + esc(j.id) + '">' + esc((j.desc || j.category) + ' · saldo ' + fmtG(jobBalance(j))) + '</option>';
+      sel.innerHTML = withDebt.map(function (w) {
+        return '<option value="' + esc(w.kind + ':' + w.x.id) + '">' +
+          esc(payDebtorLabel(w.kind, w.x) + ' · saldo ' + fmtG(payDebtorBalance(w.kind, w.x))) + '</option>';
       }).join('');
-      sel.value = withDebt[0].id;
+      sel.value = withDebt[0].kind + ':' + withDebt[0].x.id;
       document.getElementById('pf-job-wrap').hidden = false;
     }
   }
   function updatePayPreview() {
-    var j = state.data.jobs.find(function (x) { return x.id === pForm.jobId; });
-    if (!j) return;
-    var price = Number(j.price) || 0;
-    var otherPaid = (j.payments || []).reduce(function (a, p) {
+    var x = payDebtor(pForm.kind, pForm.id);
+    if (!x) return;
+    var total = payDebtorTotal(pForm.kind, x);
+    var otherPaid = (x.payments || []).reduce(function (a, p) {
       return a + (p.id === pForm.payId ? 0 : (Number(p.amount) || 0));
     }, 0);
     var amount = parseMoney(document.getElementById('pf-amount').value);
-    var txt = fmtG(Math.max(0, price - otherPaid - amount));
-    if (amount > 0 && otherPaid + amount >= price) txt += ' — ¡queda pagado!';
+    var txt = fmtG(Math.max(0, total - otherPaid - amount));
+    if (amount > 0 && otherPaid + amount >= total) txt += ' — ¡queda pagado!';
     document.getElementById('pf-new').textContent = txt;
   }
   function closePayModal() { if (!payModalEl.hidden) { payModalEl.hidden = true; histConsume(); } }
@@ -770,27 +1099,27 @@
     var editing = !!pForm.payId;
     var paidOff = false;
     mutate(function (d) {
-      var j = d.jobs.find(function (x) { return x.id === pForm.jobId; });
-      if (!j) return;
-      j.payments = j.payments || [];
+      var x = payDebtor(pForm.kind, pForm.id, d);
+      if (!x) return;
+      x.payments = x.payments || [];
       if (editing) {
-        var p = j.payments.find(function (x) { return x.id === pForm.payId; });
+        var p = x.payments.find(function (y) { return y.id === pForm.payId; });
         if (p) { p.amount = amount; p.date = date; p.note = note; }
       } else {
-        j.payments.push({ id: uid(), amount: amount, date: date, note: note });
+        x.payments.push({ id: uid(), amount: amount, date: date, note: note });
       }
-      paidOff = recomputeDone(j);
+      paidOff = pForm.kind === 'sale' ? recomputeSaleDone(x) : recomputeDone(x);
     });
     closePayModal();
     vib(30);
-    toast(editing ? 'Pago actualizado.' : (paidOff ? 'Pago registrado — ¡trabajo saldado!' : 'Pago registrado.'));
+    toast(editing ? 'Pago actualizado.' : (paidOff ? 'Pago registrado — ¡quedó saldado!' : 'Pago registrado.'));
   }
-  function delPayment(jobId, payId) {
+  function delPayment(kind, ownerId, payId) {
     mutate(function (d) {
-      var j = d.jobs.find(function (x) { return x.id === jobId; });
-      if (!j) return;
-      j.payments = (j.payments || []).filter(function (p) { return p.id !== payId; });
-      recomputeDone(j);
+      var x = payDebtor(kind, ownerId, d);
+      if (!x) return;
+      x.payments = (x.payments || []).filter(function (p) { return p.id !== payId; });
+      if (kind === 'sale') recomputeSaleDone(x); else recomputeDone(x);
     });
     toast('Pago eliminado.');
   }
@@ -798,8 +1127,8 @@
   // ===== Modal posponer / fijar fecha =====
   var postModalEl = document.getElementById('modal-post');
   var ppForm = {};
-  function openPost(jobId, ddId) {
-    var j = state.data.jobs.find(function (x) { return x.id === jobId; });
+  function openPostKind(kind, id, ddId) {
+    var j = payDebtor(kind, id);
     if (!j) return;
     var target = ddId;
     if (!target) {
@@ -807,12 +1136,12 @@
         .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
       target = pend.length ? pend[0].id : null;
     }
-    ppForm = { jobId: jobId, ddId: target };
+    ppForm = { kind: kind, id: id, ddId: target };
     var c = state.data.clients.find(function (x) { return x.id === j.clientId; });
     document.getElementById('pp-title').textContent = target ? 'Posponer cobro' : 'Fijar fecha de cobro';
     document.getElementById('pp-save').textContent = target ? 'Guardar nueva fecha' : 'Fijar fecha';
     document.getElementById('pp-sub').textContent =
-      (c ? c.name : '') + ' — ' + (j.desc || j.category) + ' · debe ' + fmtG(jobBalance(j));
+      (c ? c.name : '') + ' — ' + payDebtorLabel(kind, j) + ' · debe ' + fmtG(payDebtorBalance(kind, j));
     document.getElementById('pp-date').value = addDaysIso(todayIso(), 7);
     var err = document.getElementById('pp-err');
     err.hidden = true;
@@ -820,6 +1149,7 @@
     if (postModalEl.hidden) histPush();
     postModalEl.hidden = false;
   }
+  function openPost(jobId, ddId) { openPostKind('job', jobId, ddId); }
   // El mismo modal sirve para posponer un mantenimiento (ppForm.maintCid)
   function openPostMaint(cid) {
     var c = state.data.clients.find(function (x) { return x.id === cid; });
@@ -856,7 +1186,7 @@
     }
     var wasFijar = !ppForm.ddId;
     mutate(function (d) {
-      var j = d.jobs.find(function (x) { return x.id === ppForm.jobId; });
+      var j = payDebtor(ppForm.kind || 'job', ppForm.id, d);
       if (!j) return;
       j.dueDates = j.dueDates || [];
       if (ppForm.ddId) {
@@ -1122,9 +1452,8 @@
       }
     });
     if (isNew && newId) {
-      // el modal se oculta y su entrada de historial pasa a ser la de la ficha
-      prodModalEl.hidden = true;
-      goProduct(newId, true);
+      absorbOverlay(prodModalEl);
+      goProduct(newId);
       toast('Producto guardado. El stock entra con las compras.');
     } else {
       closeProductModal();
@@ -1485,7 +1814,7 @@
     } catch (e) {}
   }
 
-  // ===== Alertas de cobro =====
+  // ===== Alertas de cobro (trabajos + ventas) =====
   function buildAlerts() {
     var S = state.data.settings;
     var today = todayIso();
@@ -1499,16 +1828,37 @@
         if (x.done) return;
         var diff = daysBetween(today, x.date);
         var group = diff < 0 ? 'venc' : diff === 0 ? 'hoy' : diff <= remind ? 'prox' : 'fut';
-        alerts.push({ j: j, x: x, diff: diff, group: group, bal: bal });
+        alerts.push({ kind: 'job', j: j, x: x, diff: diff, group: group, bal: bal });
+      });
+    });
+    (state.data.sales || []).forEach(function (s) {
+      if (!s.credit) return;
+      var bal = saleBalance(s);
+      if (bal <= 0) return;
+      var remind = Number(S.remindDays) || 0;
+      (s.dueDates || []).forEach(function (x) {
+        if (x.done) return;
+        var diff = daysBetween(today, x.date);
+        var group = diff < 0 ? 'venc' : diff === 0 ? 'hoy' : diff <= remind ? 'prox' : 'fut';
+        alerts.push({ kind: 'sale', j: s, x: x, diff: diff, group: group, bal: bal });
       });
     });
     alerts.sort(function (a, b) { return a.x.date < b.x.date ? -1 : 1; });
     return alerts;
   }
   function jobsSinFecha() {
-    return (state.data.jobs || []).filter(function (j) {
-      return j.credit && jobBalance(j) > 0 && !(j.dueDates || []).some(function (x) { return !x.done; });
+    var out = [];
+    (state.data.jobs || []).forEach(function (j) {
+      if (j.credit && jobBalance(j) > 0 && !(j.dueDates || []).some(function (x) { return !x.done; })) {
+        out.push({ kind: 'job', x: j });
+      }
     });
+    (state.data.sales || []).forEach(function (s) {
+      if (s.credit && saleBalance(s) > 0 && !(s.dueDates || []).some(function (x) { return !x.done; })) {
+        out.push({ kind: 'sale', x: s });
+      }
+    });
+    return out;
   }
 
   // ===== Mantenimiento periódico por cliente =====
@@ -1582,10 +1932,17 @@
   function openWaRemind(cid) {
     var c = state.data.clients.find(function (x) { return x.id === cid; });
     if (!c || !c.phone) return;
-    var debts = jobsOf(cid).filter(function (j) { return j.credit && jobBalance(j) > 0; });
-    if (!debts.length) { toast('Este cliente está al día.'); return; }
-    var bal = debts.reduce(function (a, j) { return a + jobBalance(j); }, 0);
-    var concept = debts.length === 1 ? (debts[0].desc || debts[0].category) : 'los trabajos realizados';
+    var jobDebts = jobsOf(cid).filter(function (j) { return j.credit && jobBalance(j) > 0; });
+    var saleDebts = salesOf(cid).filter(function (s) { return s.credit && saleBalance(s) > 0; });
+    if (!jobDebts.length && !saleDebts.length) { toast('Este cliente está al día.'); return; }
+    var bal = jobDebts.reduce(function (a, j) { return a + jobBalance(j); }, 0) +
+      saleDebts.reduce(function (a, s) { return a + saleBalance(s); }, 0);
+    var concept;
+    if (jobDebts.length === 1 && !saleDebts.length) concept = jobDebts[0].desc || jobDebts[0].category;
+    else if (!jobDebts.length && saleDebts.length === 1) concept = 'la ' + payDebtorLabel('sale', saleDebts[0]).toLowerCase();
+    else if (!jobDebts.length) concept = 'las ventas de productos';
+    else if (!saleDebts.length) concept = 'los trabajos realizados';
+    else concept = 'los trabajos y ventas';
     window.open(waLink(c.phone, waRemindMsg(c.name, bal, concept)), '_blank', 'noopener');
   }
 
@@ -1595,20 +1952,34 @@
     if (!c) return '';
     var debts = jobsOf(cid).filter(function (j) { return j.credit && jobBalance(j) > 0; })
       .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    var saleDebts = salesOf(cid).filter(function (s) { return s.credit && saleBalance(s) > 0; })
+      .sort(function (a, b) { return (a.date || '') < (b.date || '') ? -1 : 1; });
     var total = 0;
     var lines = [];
     lines.push('JGM SERVICIOS — Estado de cuenta');
     lines.push('Cliente: ' + c.name);
     lines.push('Fecha: ' + dd(todayIso()));
     lines.push('');
-    if (debts.length) {
-      lines.push('Trabajos con saldo pendiente:');
-      debts.forEach(function (j) {
-        var paid = jobPaid(j), balj = jobBalance(j);
-        total += balj;
-        lines.push('• ' + (j.desc || j.category) + ' — ' + dd(j.date));
-        lines.push('  Precio: ' + fmtG(j.price) + ' · Pagado: ' + fmtG(paid) + ' · Saldo: ' + fmtG(balj));
-      });
+    if (debts.length || saleDebts.length) {
+      if (debts.length) {
+        lines.push('Trabajos con saldo pendiente:');
+        debts.forEach(function (j) {
+          var paid = jobPaid(j), balj = jobBalance(j);
+          total += balj;
+          lines.push('• ' + (j.desc || j.category) + ' — ' + dd(j.date));
+          lines.push('  Precio: ' + fmtG(j.price) + ' · Pagado: ' + fmtG(paid) + ' · Saldo: ' + fmtG(balj));
+        });
+      }
+      if (saleDebts.length) {
+        if (debts.length) lines.push('');
+        lines.push('Ventas con saldo pendiente:');
+        saleDebts.forEach(function (s) {
+          var paid = salePaid(s), bals = saleBalance(s);
+          total += bals;
+          lines.push('• ' + payDebtorLabel('sale', s) + ' — ' + dd(s.date));
+          lines.push('  Precio: ' + fmtG(saleTotal(s)) + ' · Pagado: ' + fmtG(paid) + ' · Saldo: ' + fmtG(bals));
+        });
+      }
       lines.push('');
       lines.push('TOTAL ADEUDADO: ' + fmtG(total));
     } else {
@@ -1778,8 +2149,19 @@
       '<div class="job-head-top"><span class="cat-pill">' + esc(j.category || 'Otro') + '</span>' +
       '<span class="job-date">' + esc(dateLabel) + '</span></div>' +
       '<div class="job-desc-row"><div class="job-desc">' + esc(j.desc || '(sin descripción)') + '</div>' +
-      '<span class="job-caret">' + (expanded ? '▲ cerrar' : '▼ detalles') + '</span></div>' +
-      '<div class="job-mode-row"><span class="job-mode">' + (j.credit ? 'Crédito' : 'Contado') +
+      '<span class="job-caret">' + (expanded ? '▲ cerrar' : '▼ detalles') + '</span></div>';
+    (j.items || []).forEach(function (it) {
+      var p = productById(it.productId);
+      var w = warrantyInfo(j.date, it.warrantyMonths);
+      html += '<div class="sale-line"><span class="sale-line-name">🛒 ' +
+        esc((p ? p.name : '(producto eliminado)') + (it.qty > 1 ? ' × ' + it.qty : '')) + '</span>' +
+        '<span class="sale-line-price mono">' + esc(fmtG((Number(it.qty) || 0) * (Number(it.unitPrice) || 0))) + '</span></div>';
+      if (w) {
+        html += '<div class="warranty-chip ' + (w.active ? 'ok' : 'off') + '">' +
+          (w.active ? '🛡 Garantía vigente hasta ' + esc(dd(w.until)) : 'Garantía vencida el ' + esc(dd(w.until))) + '</div>';
+      }
+    });
+    html += '<div class="job-mode-row"><span class="job-mode">' + (j.credit ? 'Crédito' : 'Contado') +
       ' · <span class="mono">' + esc(fmtG(j.price)) + '</span></span>' +
       '<span class="st-pill ' + (isPaid ? 'st-paid' : 'st-debt') + '">' + esc(stText) + '</span></div>';
 
@@ -1832,6 +2214,64 @@
     return html;
   }
 
+  // Tarjeta de una venta en la ficha del cliente: precios de venta completos,
+  // SIN costos ni ganancia (eso vive solo en el estado de resultados).
+  function saleCardHtml(s) {
+    var total = saleTotal(s), paid = salePaid(s), bal = saleBalance(s);
+    var isPaid = s.credit ? bal <= 0 : true;
+    var pct = total > 0 ? Math.min(100, Math.round(paid / total * 100)) : 0;
+    var pendDues = (s.dueDates || []).filter(function (x) { return !x.done; });
+    var delLbl = state.confirmKey === 'delsale:' + s.id ? '¿Seguro?' : 'Eliminar';
+
+    var html = '<div class="job-card sale-card">' +
+      '<div class="job-head">' +
+      '<div class="job-head-top"><span class="cat-pill sale">🛒 Venta</span>' +
+      '<span class="job-date">' + esc(dd(s.date)) + '</span></div>';
+    (s.items || []).forEach(function (it) {
+      var p = productById(it.productId);
+      var w = warrantyInfo(s.date, it.warrantyMonths);
+      html += '<div class="sale-line"><span class="sale-line-name">' +
+        esc((p ? p.name : '(producto eliminado)') + (it.qty > 1 ? ' × ' + it.qty : '')) + '</span>' +
+        '<span class="sale-line-price mono">' + esc(fmtG((Number(it.qty) || 0) * (Number(it.unitPrice) || 0))) + '</span></div>';
+      if (w) {
+        html += '<div class="warranty-chip ' + (w.active ? 'ok' : 'off') + '">' +
+          (w.active ? '🛡 Garantía vigente hasta ' + esc(dd(w.until)) : 'Garantía vencida el ' + esc(dd(w.until))) + '</div>';
+      }
+    });
+    html += '<div class="job-mode-row"><span class="job-mode">' + (s.credit ? 'Crédito' : 'Contado') +
+      ' · <span class="mono">' + esc(fmtG(total)) + '</span></span>' +
+      '<span class="st-pill ' + (isPaid ? 'st-paid' : 'st-debt') + '">' + esc(isPaid ? 'Pagado' : 'Debe ' + mill(bal)) + '</span></div>';
+    if (s.credit) {
+      html += '<div class="progress"><div style="width:' + pct + '%;"></div></div>' +
+        '<div class="job-pay-row">' +
+        '<span>Pagado: <span class="mono" style="color:#1F8A5B;">' + esc(fmtG(paid)) + '</span></span>' +
+        '<span>Saldo: <span class="mono" style="color:' + (bal > 0 ? '#C2452D' : '#1F8A5B') + ';">' + esc(fmtG(bal)) + '</span></span></div>';
+      if (pendDues.length) {
+        html += '<div class="due-chips">' + pendDues.map(function (x) {
+          return dueChipHtml(x, { remind: null });
+        }).join('') + '</div>';
+      }
+      var pays = (s.payments || []).slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      if (pays.length) {
+        html += '<div class="pay-list" style="margin-top:8px;">' + pays.map(function (p) {
+          var delP = state.confirmKey === 'delspay:' + p.id ? '¿?' : '✕';
+          return '<div class="pay-row"><span class="pay-row-label">' + esc(dd(p.date) + (p.note ? ' · ' + p.note : '')) + '</span>' +
+            '<span class="pay-row-right"><span class="pay-row-amount">+ ' + esc(fmtG(p.amount)) + '</span>' +
+            '<button type="button" class="pay-btn pay-edit" data-spay-edit="' + esc(s.id) + ':' + esc(p.id) + '" aria-label="Editar pago">✎</button>' +
+            '<button type="button" class="pay-btn pay-del" data-spay-del="' + esc(s.id) + ':' + esc(p.id) + '" aria-label="Borrar pago">' + delP + '</button></span></div>';
+        }).join('') + '</div>';
+      }
+    }
+    html += '<div class="job-actions" style="margin-top:10px;">';
+    if (s.credit && bal > 0) {
+      html += '<button type="button" class="btn-pay" data-sale-pay="' + esc(s.id) + '">+ Registrar pago</button>' +
+        '<button type="button" class="btn-ghost" data-sale-post="' + esc(s.id) + '">' + (pendDues.length ? 'Posponer' : 'Fijar fecha') + '</button>';
+    }
+    html += '<button type="button" class="btn-ghost-danger" data-sale-del="' + esc(s.id) + '">' + delLbl + '</button></div>';
+    html += '</div></div>';
+    return html;
+  }
+
   function renderCliente() {
     var box = document.getElementById('cliente-detail');
     var c = state.data.clients.find(function (x) { return x.id === state.clientId; });
@@ -1839,6 +2279,7 @@
     loadPhotos(c.photos);
     var bal = clientBalances()[c.id] || 0;
     var js = jobsOf(c.id).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    var vs = salesOf(c.id).sort(function (a, b) { return (a.date || '') < (b.date || '') ? 1 : -1; });
     var wa = waLink(c.phone);
     var meta = [c.ci || '', c.phone || ''].filter(Boolean).join(' · ') || 'Sin datos de contacto';
     var delLabel = state.confirmKey === 'delc:' + c.id ? '¿Seguro? Tocá otra vez' : 'Eliminar';
@@ -1916,6 +2357,9 @@
       esc(bal > 0 ? fmtG(bal) : 'Al día ✓') + '</span></div>';
 
     html += '<button type="button" class="btn-big-primary js-client-new-job">+ Nuevo trabajo para este cliente</button>';
+    if ((state.data.products || []).length) {
+      html += '<button type="button" class="btn-big-sale js-client-sale">🛒 Vender producto del stock</button>';
+    }
     if (bal > 0) {
       html += '<button type="button" class="btn-big-pay js-client-pay">+ Registrar pago</button>';
       html += '<div class="acct-actions">' +
@@ -1925,10 +2369,14 @@
         '<button type="button" class="acct-btn js-client-statement">📄 Estado de cuenta</button></div>';
     }
 
-    if (js.length) {
-      html += js.map(jobCardHtml).join('');
+    // trabajos y ventas mezclados por fecha (los más nuevos arriba)
+    var feed = js.map(function (j) { return { t: 'job', d: j.date || '', o: j }; })
+      .concat(vs.map(function (s) { return { t: 'sale', d: s.date || '', o: s }; }))
+      .sort(function (a, b) { return a.d < b.d ? 1 : -1; });
+    if (feed.length) {
+      html += feed.map(function (f) { return f.t === 'job' ? jobCardHtml(f.o) : saleCardHtml(f.o); }).join('');
     } else {
-      html += '<div class="dashed-card">Este cliente todavía no tiene trabajos cargados.</div>';
+      html += '<div class="dashed-card">Este cliente todavía no tiene trabajos ni ventas cargados.</div>';
     }
 
     box.innerHTML = html;
@@ -1951,6 +2399,8 @@
         mutate(function (d) {
           d.clients = d.clients.filter(function (x) { return x.id !== c.id; });
           d.jobs = d.jobs.filter(function (x) { return x.clientId !== c.id; });
+          // se borra el historial; lo vendido salió de verdad, el stock no se toca
+          d.sales = (d.sales || []).filter(function (x) { return x.clientId !== c.id; });
         });
         go('clientes');
         toast('Cliente eliminado.');
@@ -1961,6 +2411,32 @@
     });
     var clientPayBtn = box.querySelector('.js-client-pay');
     if (clientPayBtn) clientPayBtn.addEventListener('click', function () { openPayForClient(c.id); });
+    var clientSaleBtn = box.querySelector('.js-client-sale');
+    if (clientSaleBtn) clientSaleBtn.addEventListener('click', function () { openSaleModal({ clientId: c.id }); });
+    box.querySelectorAll('[data-sale-pay]').forEach(function (el) {
+      el.addEventListener('click', function () { openPaySale(el.getAttribute('data-sale-pay')); });
+    });
+    box.querySelectorAll('[data-sale-post]').forEach(function (el) {
+      el.addEventListener('click', function () { openPostKind('sale', el.getAttribute('data-sale-post'), null); });
+    });
+    box.querySelectorAll('[data-sale-del]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var id = el.getAttribute('data-sale-del');
+        confirm2('delsale:' + id, function () { delSale(id); });
+      });
+    });
+    box.querySelectorAll('[data-spay-edit]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var parts = el.getAttribute('data-spay-edit').split(':');
+        openPaySale(parts[0], parts[1]);
+      });
+    });
+    box.querySelectorAll('[data-spay-del]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var parts = el.getAttribute('data-spay-del').split(':');
+        confirm2('delspay:' + parts[1], function () { delPayment('sale', parts[0], parts[1]); });
+      });
+    });
     var remindBtn = box.querySelector('.js-client-remind');
     if (remindBtn) remindBtn.addEventListener('click', function () { openWaRemind(c.id); });
     var stmtBtn = box.querySelector('.js-client-statement');
@@ -2032,7 +2508,7 @@
         e.stopPropagation();
         var parts = el.getAttribute('data-pay-del').split(':');
         var jobId = parts[0], payId = parts[1];
-        confirm2('delpay:' + payId, function () { delPayment(jobId, payId); });
+        confirm2('delpay:' + payId, function () { delPayment('job', jobId, payId); });
       });
     });
     box.querySelectorAll('[data-job-post]').forEach(function (el) {
@@ -2056,6 +2532,8 @@
           var jj = state.data.jobs.find(function (x) { return x.id === id; });
           if (jj) delOwnerPhotos(jj);
           mutate(function (d) {
+            var dj = d.jobs.find(function (x) { return x.id === id; });
+            if (dj) applySoldItems(d, dj.items, +1); // deshacer: sus productos vuelven al stock
             d.jobs = d.jobs.filter(function (x) { return x.id !== id; });
           });
           toast('Trabajo eliminado.');
@@ -2088,19 +2566,11 @@
     var totSub = credCount + (credCount === 1 ? ' trabajo con saldo' : ' trabajos con saldo') +
       ' · ' + debtClients + (debtClients === 1 ? ' cliente' : ' clientes');
 
+    // mismos números que la fila del mes en el Registro mensual
     var mes = today.slice(0, 7);
-    var mesReal = D.jobs.filter(function (j) { return (j.date || '').slice(0, 7) === mes; })
-      .reduce(function (a, j) { return a + (Number(j.price) || 0); }, 0);
-    var mesCob = 0;
-    D.jobs.forEach(function (j) {
-      if (j.credit) {
-        (j.payments || []).forEach(function (p) {
-          if ((p.date || '').slice(0, 7) === mes) mesCob += Number(p.amount) || 0;
-        });
-      } else if ((j.date || '').slice(0, 7) === mes) {
-        mesCob += Number(j.price) || 0;
-      }
-    });
+    var mrow = monthlyStats().find(function (r) { return r.ym === mes; });
+    var mesReal = mrow ? mrow.facturado : 0;
+    var mesCob = mrow ? mrow.cobrado : 0;
     var mesLabel = MESES[Number(today.slice(5, 7)) - 1] + ' ' + today.slice(0, 4);
     mesLabel = mesLabel.charAt(0).toUpperCase() + mesLabel.slice(1);
     var mesPct = mesReal > 0 ? Math.min(100, Math.round(mesCob / mesReal * 100)) : 0;
@@ -2241,6 +2711,19 @@
         bkt(jm).cobrado += price;
       }
     });
+    (state.data.sales || []).forEach(function (s) {
+      var sm = (s.date || '').slice(0, 7);
+      var total = saleTotal(s);
+      if (sm) bkt(sm).facturado += total;
+      if (s.credit) {
+        (s.payments || []).forEach(function (p) {
+          var pm = (p.date || '').slice(0, 7);
+          if (pm) bkt(pm).cobrado += Number(p.amount) || 0;
+        });
+      } else if (sm) {
+        bkt(sm).cobrado += total;
+      }
+    });
     (state.data.expenses || []).forEach(function (e) {
       var em = (e.date || '').slice(0, 7);
       if (em) bkt(em).gastos += Number(e.amount) || 0;
@@ -2338,6 +2821,25 @@
         });
       } else if (jm === ym) {
         cobrado.push({ client: cname, clientId: exists ? j.clientId : '', concept: 'Contado', desc: desc, date: j.date, amount: Number(j.price) || 0 });
+      }
+    });
+    (D.sales || []).forEach(function (s) {
+      var sm = (s.date || '').slice(0, 7);
+      var cname = (cById[s.clientId] || {}).name || 'Cliente eliminado';
+      var exists = !!cById[s.clientId];
+      var desc = payDebtorLabel('sale', s);
+      var total = saleTotal(s);
+      if (sm === ym) {
+        facturado.push({ client: cname, clientId: exists ? s.clientId : '', desc: desc, date: s.date, amount: total, credit: s.credit });
+      }
+      if (s.credit) {
+        (s.payments || []).forEach(function (p) {
+          if ((p.date || '').slice(0, 7) === ym) {
+            cobrado.push({ client: cname, clientId: exists ? s.clientId : '', concept: (p.note || '').trim() || 'Pago', desc: desc, date: p.date, amount: Number(p.amount) || 0 });
+          }
+        });
+      } else if (sm === ym) {
+        cobrado.push({ client: cname, clientId: exists ? s.clientId : '', concept: 'Contado', desc: desc, date: s.date, amount: total });
       }
     });
     var byDate = function (a, b) { return (a.date || '') < (b.date || '') ? -1 : 1; };
@@ -2607,6 +3109,9 @@
       '<span class="reg-open-sub">Pedidos a China y compras locales</span></span>' +
       '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>';
 
+    if (prods.some(function (p) { return (Number(p.stock) || 0) > 0; })) {
+      html += '<button type="button" class="btn-big-sale js-sell">🛒 Vender</button>';
+    }
     html += '<button type="button" class="btn-big-primary js-new-product">+ Nuevo producto</button>';
 
     if (!prods.length) {
@@ -2621,6 +3126,8 @@
     var comprasBtn = box.querySelector('.js-goto-compras');
     if (comprasBtn) comprasBtn.addEventListener('click', function () { go('compras'); });
     box.querySelector('.js-new-product').addEventListener('click', function () { openProductModal(null); });
+    var sellBtn = box.querySelector('.js-sell');
+    if (sellBtn) sellBtn.addEventListener('click', function () { openSaleModal({}); });
     box.querySelectorAll('[data-product]').forEach(function (el) {
       el.addEventListener('click', function () { goProduct(el.getAttribute('data-product')); });
     });
@@ -2665,7 +3172,48 @@
       '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg>' +
       '<span>Agregar</span></div></div></div>';
 
+    if (stock > 0) {
+      html += '<button type="button" class="btn-big-sale js-sell-product">🛒 Vender este producto</button>';
+    }
     html += '<button type="button" class="btn-ghost-danger btn-full js-adjust">Ajustar stock (rotura / pérdida)</button>';
+
+    // historial: ventas de este producto (ventas directas + dentro de trabajos)
+    var sold = [];
+    var cName = function (cid) {
+      var cc = state.data.clients.find(function (x) { return x.id === cid; });
+      return cc ? cc.name : '(cliente eliminado)';
+    };
+    (state.data.sales || []).forEach(function (s) {
+      (s.items || []).forEach(function (it) {
+        if (it.productId === p.id) sold.push({ date: s.date, clientId: s.clientId, qty: it.qty, unitPrice: it.unitPrice, warrantyMonths: it.warrantyMonths, via: 'Venta' });
+      });
+    });
+    (state.data.jobs || []).forEach(function (j) {
+      (j.items || []).forEach(function (it) {
+        if (it.productId === p.id) sold.push({ date: j.date, clientId: j.clientId, qty: it.qty, unitPrice: it.unitPrice, warrantyMonths: it.warrantyMonths, via: 'Trabajo' });
+      });
+    });
+    sold.sort(function (a, b) { return (a.date || '') < (b.date || '') ? 1 : -1; });
+    var actives = sold.map(function (x) { return { x: x, w: warrantyInfo(x.date, x.warrantyMonths) }; })
+      .filter(function (y) { return y.w && y.w.active; });
+    if (actives.length) {
+      html += '<div class="panel"><div class="panel-label">🛡 Garantías vigentes · ' + actives.length + '</div><div class="regd-list">' +
+        actives.map(function (y) {
+          return '<div class="regd-row"><div class="regd-main">' +
+            '<div class="regd-name">' + esc(cName(y.x.clientId)) + '</div>' +
+            '<div class="regd-sub">' + esc('Vendido ' + dd(y.x.date) + ' · vence ' + dd(y.w.until)) + '</div></div>' +
+            '<span class="warranty-chip ok" style="margin:0;">vigente</span></div>';
+        }).join('') + '</div></div>';
+    }
+    if (sold.length) {
+      html += '<div class="panel"><div class="panel-label">Ventas de este producto · ' + sold.length + '</div><div class="regd-list">' +
+        sold.map(function (x) {
+          return '<div class="regd-row"><div class="regd-main">' +
+            '<div class="regd-name">' + esc(cName(x.clientId)) + '</div>' +
+            '<div class="regd-sub">' + esc(x.via + ' · ' + dd(x.date) + (x.qty > 1 ? ' · ×' + x.qty : '')) + '</div></div>' +
+            '<span class="regd-amt mono blue">' + esc(fmtG((Number(x.qty) || 0) * (Number(x.unitPrice) || 0))) + '</span></div>';
+        }).join('') + '</div></div>';
+    }
 
     // historial: compras de este producto
     var buys = [];
@@ -2711,6 +3259,8 @@
       confirm2('delprod:' + p.id, function () { delProduct(p.id); });
     });
     box.querySelector('.js-adjust').addEventListener('click', function () { openAdjustModal(p.id); });
+    var sellBtn = box.querySelector('.js-sell-product');
+    if (sellBtn) sellBtn.addEventListener('click', function () { openSaleModal({ productId: p.id }); });
     box.querySelectorAll('[data-ph-add]').forEach(function (el) {
       el.addEventListener('click', function () {
         var parts = el.getAttribute('data-ph-add').split(':');
@@ -2829,14 +3379,15 @@
 
     var alertCard = function (a, cls) {
       var c = cById[a.j.clientId];
+      var desc = a.kind === 'sale' ? payDebtorLabel('sale', a.j) : (a.j.desc || a.j.category);
       return '<div class="alert-card ' + cls + '">' +
         '<div class="alert-top"><span class="alert-date">● ' + esc(alertDateLabel(a)) + '</span>' +
         '<span class="alert-saldo">' + esc(fmtG(a.bal)) + '</span></div>' +
         '<div class="alert-client" data-alert-open="' + esc(a.j.clientId) + '">' + esc(c ? c.name : '(cliente eliminado)') + '</div>' +
-        '<div class="alert-desc">' + esc(a.j.desc || a.j.category) + '</div>' +
+        '<div class="alert-desc">' + esc(desc) + '</div>' +
         '<div class="alert-actions">' +
-        '<button type="button" class="btn-pay" data-alert-pay="' + esc(a.j.id) + '">Registrar pago</button>' +
-        '<button type="button" class="btn-ghost" data-alert-post="' + esc(a.j.id) + '" data-dd="' + esc(a.x.id) + '">Posponer</button>' +
+        '<button type="button" class="btn-pay" data-alert-pay="' + esc(a.kind + ':' + a.j.id) + '">Registrar pago</button>' +
+        '<button type="button" class="btn-ghost" data-alert-post="' + esc(a.kind + ':' + a.j.id) + '" data-dd="' + esc(a.x.id) + '">Posponer</button>' +
         (c && c.phone ? '<button type="button" class="btn-wa-sm" data-alert-wa="' + esc(a.j.clientId) + '" aria-label="Recordar por WhatsApp">' +
           '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L4 20l1-4.5A8.5 8.5 0 1 1 21 11.5"/></svg></button>' : '') +
         '</div></div>';
@@ -2875,23 +3426,25 @@
       html += '<div class="section-label gray">Más adelante · ' + fut.length + '</div>';
       html += fut.map(function (a) {
         var c = cById[a.j.clientId];
+        var desc = a.kind === 'sale' ? payDebtorLabel('sale', a.j) : (a.j.desc || a.j.category);
         return '<div class="fut-card"><div class="fut-main">' +
           '<div class="fut-name" data-alert-open="' + esc(a.j.clientId) + '">' + esc(c ? c.name : '(cliente eliminado)') + '</div>' +
-          '<div class="fut-sub">' + esc((a.j.desc || a.j.category) + ' · ' + alertDateLabel(a)) + '</div></div>' +
+          '<div class="fut-sub">' + esc(desc + ' · ' + alertDateLabel(a)) + '</div></div>' +
           '<div class="fut-right"><span class="fut-saldo">' + esc(fmtG(a.bal)) + '</span>' +
-          '<button type="button" class="fut-pay" data-alert-pay="' + esc(a.j.id) + '">Cobrar</button></div></div>';
+          '<button type="button" class="fut-pay" data-alert-pay="' + esc(a.kind + ':' + a.j.id) + '">Cobrar</button></div></div>';
       }).join('');
     }
 
     if (sin.length) {
       html += '<div class="section-label gray">Con deuda pero sin fecha de cobro · ' + sin.length + '</div>';
-      html += sin.map(function (j) {
-        var c = cById[j.clientId];
+      html += sin.map(function (w) {
+        var c = cById[w.x.clientId];
+        var desc = w.kind === 'sale' ? payDebtorLabel('sale', w.x) : (w.x.desc || w.x.category);
         return '<div class="sinfecha-card"><div class="sinfecha-main">' +
-          '<div class="fut-name" data-alert-open="' + esc(j.clientId) + '">' + esc(c ? c.name : '—') + '</div>' +
-          '<div class="fut-sub">' + esc((j.desc || j.category) + ' · debe ' + fmtG(jobBalance(j))) + '</div></div>' +
-          '<button type="button" class="fut-pay" data-alert-pay="' + esc(j.id) + '">Cobrar</button>' +
-          '<button type="button" class="btn-fijar" data-sin-post="' + esc(j.id) + '">Fijar fecha</button></div>';
+          '<div class="fut-name" data-alert-open="' + esc(w.x.clientId) + '">' + esc(c ? c.name : '—') + '</div>' +
+          '<div class="fut-sub">' + esc(desc + ' · debe ' + fmtG(payDebtorBalance(w.kind, w.x))) + '</div></div>' +
+          '<button type="button" class="fut-pay" data-alert-pay="' + esc(w.kind + ':' + w.x.id) + '">Cobrar</button>' +
+          '<button type="button" class="btn-fijar" data-sin-post="' + esc(w.kind + ':' + w.x.id) + '">Fijar fecha</button></div>';
       }).join('');
     }
 
@@ -2901,17 +3454,27 @@
     box.querySelectorAll('[data-alert-open]').forEach(function (el) {
       el.addEventListener('click', function () { goClient(el.getAttribute('data-alert-open')); });
     });
+    var parseKindId = function (v) { var p = String(v || '').split(':'); return { kind: p[0], id: p[1] }; };
     box.querySelectorAll('[data-alert-pay]').forEach(function (el) {
-      el.addEventListener('click', function () { openPay(el.getAttribute('data-alert-pay')); });
+      el.addEventListener('click', function () {
+        var w = parseKindId(el.getAttribute('data-alert-pay'));
+        openPayKind(w.kind, w.id);
+      });
     });
     box.querySelectorAll('[data-alert-post]').forEach(function (el) {
-      el.addEventListener('click', function () { openPost(el.getAttribute('data-alert-post'), el.getAttribute('data-dd')); });
+      el.addEventListener('click', function () {
+        var w = parseKindId(el.getAttribute('data-alert-post'));
+        openPostKind(w.kind, w.id, el.getAttribute('data-dd'));
+      });
     });
     box.querySelectorAll('[data-alert-wa]').forEach(function (el) {
       el.addEventListener('click', function () { openWaRemind(el.getAttribute('data-alert-wa')); });
     });
     box.querySelectorAll('[data-sin-post]').forEach(function (el) {
-      el.addEventListener('click', function () { openPost(el.getAttribute('data-sin-post'), null); });
+      el.addEventListener('click', function () {
+        var w = parseKindId(el.getAttribute('data-sin-post'));
+        openPostKind(w.kind, w.id, null);
+      });
     });
     box.querySelectorAll('[data-maint-done]').forEach(function (el) {
       el.addEventListener('click', function () { maintDone(el.getAttribute('data-maint-done')); });
@@ -3047,7 +3610,7 @@
   }
   function wipeAll() {
     var d = {
-      clients: [], jobs: [], expenses: [], staff: [], products: [], purchases: [],
+      clients: [], jobs: [], expenses: [], staff: [], products: [], purchases: [], sales: [],
       settings: { categories: defaultCats(), expenseCategories: defaultExpenseCats(), productCategories: defaultProductCats(), remindDays: 3, notifEnabled: state.data.settings.notifEnabled, devices: (state.data.settings.devices || []).slice() },
       demo: false
     };
@@ -3338,6 +3901,36 @@
   document.getElementById('jf-price')._onMoney = updateJobPreview;
   moneyInput(document.getElementById('jf-down'));
   document.getElementById('jf-down')._onMoney = updateJobPreview;
+  document.getElementById('jf-add-item').addEventListener('click', function () {
+    jForm.items.push({ productId: '', qty: 1, unitPrice: 0, warrantyMonths: 0 });
+    renderSoldItemRows('jf-items', jForm.items, updateJobPreview);
+    updateJobPreview();
+  });
+
+  // modal venta
+  saleModalEl.addEventListener('click', function (e) { if (e.target === saleModalEl) closeSaleModal(); });
+  document.getElementById('vf-cancel').addEventListener('click', closeSaleModal);
+  document.getElementById('vf-save').addEventListener('click', submitSale);
+  document.getElementById('vf-contado').addEventListener('click', function () { vForm.credit = false; renderSaleModalDynamic(); });
+  document.getElementById('vf-credito').addEventListener('click', function () { vForm.credit = true; renderSaleModalDynamic(); });
+  document.getElementById('vf-add-item').addEventListener('click', function () {
+    vForm.items.push({ productId: '', qty: 1, unitPrice: 0, warrantyMonths: 0 });
+    renderSaleModalDynamic();
+  });
+  document.getElementById('vf-add-both').addEventListener('click', function () {
+    // agrega motor y bomba juntos ("ambas"), cada uno con su precio sugerido
+    var byCat = function (cat) {
+      return (state.data.products || []).find(function (p) { return p.category === cat && (Number(p.stock) || 0) > 0; }) ||
+        (state.data.products || []).find(function (p) { return p.category === cat; });
+    };
+    var motor = byCat('Motor'), bomba = byCat('Bomba');
+    vForm.items.push({ productId: motor ? motor.id : '', qty: 1, unitPrice: motor ? (Number(motor.price) || 0) : 0, warrantyMonths: 0 });
+    vForm.items.push({ productId: bomba ? bomba.id : '', qty: 1, unitPrice: bomba ? (Number(bomba.price) || 0) : 0, warrantyMonths: 0 });
+    renderSaleModalDynamic();
+  });
+  moneyInput(document.getElementById('vf-down'));
+  document.getElementById('vf-down')._onMoney = updateSalePreview;
+  clearErrOnInput(['vf-client'], 'vf-err');
 
   // modal pago
   payModalEl.addEventListener('click', function (e) { if (e.target === payModalEl) closePayModal(); });
@@ -3346,25 +3939,28 @@
   moneyInput(document.getElementById('pf-amount'));
   document.getElementById('pf-amount')._onMoney = updatePayPreview;
   document.getElementById('pf-all').addEventListener('click', function () {
-    var j = state.data.jobs.find(function (x) { return x.id === pForm.jobId; });
-    if (!j) return;
-    document.getElementById('pf-amount').value = dots(jobBalance(j));
+    var x = payDebtor(pForm.kind, pForm.id);
+    if (!x) return;
+    document.getElementById('pf-amount').value = dots(payDebtorBalance(pForm.kind, x));
     updatePayPreview();
   });
   document.getElementById('pf-half').addEventListener('click', function () {
-    var j = state.data.jobs.find(function (x) { return x.id === pForm.jobId; });
-    if (!j) return;
-    document.getElementById('pf-amount').value = dots(Math.round(jobBalance(j) / 2));
+    var x = payDebtor(pForm.kind, pForm.id);
+    if (!x) return;
+    document.getElementById('pf-amount').value = dots(Math.round(payDebtorBalance(pForm.kind, x) / 2));
     updatePayPreview();
   });
-  // selector de trabajo (pago desde la ficha con varios trabajos con saldo)
+  // selector de deuda (pago desde la ficha con varios trabajos/ventas con saldo)
   document.getElementById('pf-job').addEventListener('change', function (e) {
-    var j = state.data.jobs.find(function (x) { return x.id === e.target.value; });
-    if (!j) return;
-    pForm.jobId = j.id;
-    var c = state.data.clients.find(function (x) { return x.id === j.clientId; });
-    document.getElementById('pf-sub').textContent = (c ? c.name : '') + ' — ' + (j.desc || j.category);
-    document.getElementById('pf-saldo').textContent = fmtG(jobBalance(j));
+    var parts = String(e.target.value || '').split(':');
+    var kind = parts[0], id = parts[1];
+    var x = payDebtor(kind, id);
+    if (!x) return;
+    pForm.kind = kind;
+    pForm.id = id;
+    var c = state.data.clients.find(function (y) { return y.id === x.clientId; });
+    document.getElementById('pf-sub').textContent = (c ? c.name : '') + ' — ' + payDebtorLabel(kind, x);
+    document.getElementById('pf-saldo').textContent = fmtG(payDebtorBalance(kind, x));
     updatePayPreview();
   });
 
@@ -3462,6 +4058,7 @@
     if (!purModalEl.hidden) closePurchaseModal();
     if (!rcvModalEl.hidden) closeReceiveModal();
     if (!adjModalEl.hidden) closeAdjustModal();
+    if (!saleModalEl.hidden) closeSaleModal();
   });
   // flechas del teclado en el visor (escritorio)
   document.addEventListener('keydown', function (e) {
@@ -3826,6 +4423,7 @@
     if (!purModalEl.hidden) { purModalEl.hidden = true; return; }
     if (!rcvModalEl.hidden) { rcvModalEl.hidden = true; return; }
     if (!adjModalEl.hidden) { adjModalEl.hidden = true; return; }
+    if (!saleModalEl.hidden) { saleModalEl.hidden = true; return; }
     // 3) retroceso de pantalla: ficha -> clientes -> inicio
     if (state.view === 'cliente') {
       curViewDepth = 1;
