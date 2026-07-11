@@ -40,6 +40,13 @@ Decile a Claude Code: *"Lee CONTEXTO-PROYECTO.md y README.md de este repo,
 estamos trabajando en la rama `claude/manager-app-features-v52uqa`."* Con eso
 alcanza para que entienda todo el historial sin releer los commits uno por uno.
 
+### ⚠ Regla de trabajo con el dueño (NO olvidar)
+En los desarrollos por etapas, el dueño quiere **aprobar cada etapa antes de
+que se empiece la siguiente**: se construye una etapa, se verifica, se le
+muestra el resultado, y **se espera su autorización** para continuar. En la
+ampliación 2026-07 esto no se respetó (se construyó todo de corrido) y el
+dueño lo marcó — que no vuelva a pasar.
+
 ## 3. Stack técnico
 
 **Vanilla JS, sin build, sin dependencias, sin backend.** Se eligió así a
