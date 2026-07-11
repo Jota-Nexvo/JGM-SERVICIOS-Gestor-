@@ -139,9 +139,9 @@
       { id: 'e5', date: d(-2), category: 'Movilidad', subtype: '', amount: 120000, note: 'Flete del equipo', staffId: '', jobId: '', photos: [] }
     ];
     var products = [
-      { id: 'pr1', name: 'Motor sumergible 1.5 HP (ejemplo)', category: 'Motor', notes: '', photos: [], cost: 1250000, price: 1900000, stock: 4, minStock: 1, adjusts: [] },
-      { id: 'pr2', name: 'Bomba sumergible 1.5 HP (ejemplo)', category: 'Bomba', notes: '', photos: [], cost: 750000, price: 1200000, stock: 3, minStock: 1, adjusts: [{ id: 'aj1', date: d(-10), qty: 1, reason: 'Llegó con el cuerpo rajado' }] },
-      { id: 'pr3', name: 'Relé falta de fase (ejemplo)', category: 'Relé', notes: '', photos: [], cost: 125000, price: 220000, stock: 1, minStock: 2, adjusts: [] }
+      { id: 'pr1', name: 'Motor sumergible 1.5 HP (ejemplo)', category: 'Motor', notes: '', photos: [], cost: 1250000, price: 1900000, minPrice: 1600000, stock: 4, minStock: 1, adjusts: [] },
+      { id: 'pr2', name: 'Bomba sumergible 1.5 HP (ejemplo)', category: 'Bomba', notes: '', photos: [], cost: 750000, price: 1200000, minPrice: 1000000, stock: 3, minStock: 1, adjusts: [{ id: 'aj1', date: d(-10), qty: 1, reason: 'Llegó con el cuerpo rajado' }] },
+      { id: 'pr3', name: 'Relé falta de fase (ejemplo)', category: 'Relé', notes: '', photos: [], cost: 125000, price: 220000, minPrice: 180000, stock: 1, minStock: 2, adjusts: [] }
     ];
     var purchases = [
       {
@@ -608,6 +608,13 @@
       box.innerHTML = '<div class="set-hint">Sin productos del stock en esta carga.</div>';
       return;
     }
+    // aviso de precio por debajo de la venta mínima del producto (avisa, no bloquea)
+    var minWarnHtml = function (it) {
+      var p = productById(it.productId);
+      var min = p ? Number(p.minPrice) || 0 : 0;
+      var below = min > 0 && (Number(it.unitPrice) || 0) > 0 && Number(it.unitPrice) < min;
+      return '<div class="si-min-warn"' + (below ? '' : ' hidden') + '>⚠ Debajo de tu venta mínima (' + esc(fmtG(min)) + ')</div>';
+    };
     box.innerHTML = items.map(function (it, i) {
       return '<div class="sale-item">' +
         '<div class="sale-item-top"><select data-si-prod="' + i + '">' + productOptionsStock(it.productId) + '</select>' +
@@ -616,8 +623,18 @@
         '<label>Cant.<input type="number" min="1" max="999" value="' + esc(String(it.qty || 1)) + '" data-si-qty="' + i + '"></label>' +
         '<label>Precio c/u (₲)<input inputmode="numeric" class="mono-input" value="' + (it.unitPrice ? esc(dots(it.unitPrice)) : '') + '" placeholder="0" data-si-price="' + i + '"></label>' +
         '<label>Garantía (meses)<input type="number" min="0" max="120" value="' + esc(String(it.warrantyMonths || 0)) + '" placeholder="0" data-si-war="' + i + '"></label>' +
-        '</div></div>';
+        '</div>' + minWarnHtml(it) + '</div>';
     }).join('');
+    var refreshMinWarn = function (rowEl, it) {
+      var p = productById(it.productId);
+      var min = p ? Number(p.minPrice) || 0 : 0;
+      var below = min > 0 && (Number(it.unitPrice) || 0) > 0 && Number(it.unitPrice) < min;
+      var w = rowEl.querySelector('.si-min-warn');
+      if (w) {
+        w.hidden = !below;
+        if (below) w.textContent = '⚠ Debajo de tu venta mínima (' + fmtG(min) + ')';
+      }
+    };
     box.querySelectorAll('[data-si-rm]').forEach(function (el) {
       el.addEventListener('click', function () {
         items.splice(Number(el.getAttribute('data-si-rm')), 1);
@@ -634,6 +651,8 @@
         if (p && p.price) {
           it.unitPrice = Number(p.price) || 0;
           renderSoldItemRows(boxId, items, onChange);
+        } else {
+          refreshMinWarn(el.closest('.sale-item'), it);
         }
         onChange();
       });
@@ -648,7 +667,9 @@
       el.addEventListener('input', function () {
         var n = parseMoney(el.value);
         el.value = n ? dots(n) : '';
-        items[Number(el.getAttribute('data-si-price'))].unitPrice = n;
+        var it = items[Number(el.getAttribute('data-si-price'))];
+        it.unitPrice = n;
+        refreshMinWarn(el.closest('.sale-item'), it);
         onChange();
       });
     });
@@ -1420,6 +1441,7 @@
     document.getElementById('prf-save').textContent = p ? 'Guardar cambios' : 'Guardar producto';
     document.getElementById('prf-name').value = p ? p.name : '';
     document.getElementById('prf-price').value = p && p.price ? dots(p.price) : '';
+    document.getElementById('prf-minprice').value = p && p.minPrice ? dots(p.minPrice) : '';
     document.getElementById('prf-min').value = p ? String(p.minStock || 0) : '1';
     document.getElementById('prf-notes').value = p ? (p.notes || '') : '';
     var err = document.getElementById('prf-err');
@@ -1440,6 +1462,7 @@
       return;
     }
     var price = parseMoney(document.getElementById('prf-price').value);
+    var minPrice = parseMoney(document.getElementById('prf-minprice').value);
     var minStock = Math.max(0, Math.min(999, Number(document.getElementById('prf-min').value) || 0));
     var notes = document.getElementById('prf-notes').value;
     var isNew = !prForm.id;
@@ -1447,10 +1470,10 @@
     mutate(function (d) {
       if (prForm.id) {
         var p = d.products.find(function (x) { return x.id === prForm.id; });
-        if (p) { p.name = name; p.category = prForm.category; p.price = price; p.minStock = minStock; p.notes = notes; }
+        if (p) { p.name = name; p.category = prForm.category; p.price = price; p.minPrice = minPrice; p.minStock = minStock; p.notes = notes; }
       } else {
         newId = uid();
-        d.products.push({ id: newId, name: name, category: prForm.category, notes: notes, photos: [], cost: 0, price: price, stock: 0, minStock: minStock, adjusts: [] });
+        d.products.push({ id: newId, name: name, category: prForm.category, notes: notes, photos: [], cost: 0, price: price, minPrice: minPrice, stock: 0, minStock: minStock, adjusts: [] });
       }
     });
     if (isNew && newId) {
