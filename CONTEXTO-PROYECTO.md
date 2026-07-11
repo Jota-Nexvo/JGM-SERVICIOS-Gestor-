@@ -562,7 +562,10 @@ por el dueño — no re-preguntar.
     **prorrateo proporcional al valor** → costo real por unidad; re-compra =
     **promedio ponderado**). Soporta **precio de conjunto** (motobomba
     completa) que se divide entre motor y bomba con montos editables.
-    También **compra local** en un paso (costo directo).
+    También **compra local** en un paso (costo directo). La fila de conjunto
+    tiene además el botón **"÷ Dividir según mis precios de venta"** (2026-07-11):
+    reparte el precio del conjunto entre motor y bomba proporcionalmente a sus
+    precios de venta del catálogo, editable después.
   - **Contabilidad de inventario**: comprar stock NO es gasto del mes (es
     activo); el costo entra al resultado al vender (COGS). **Mermas** con
     botón "ajustar stock" + motivo, visibles en el estado de resultados.

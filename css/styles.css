@@ -1354,6 +1354,7 @@ button, input, textarea, select { font-family: inherit; }
 .bu-grid3 input { min-width: 0; }
 .bu-set-foot { font-size: 12px; color: #4A5468; margin-top: 7px; }
 .bu-set-foot .mono { font-family: 'IBM Plex Mono', monospace; font-weight: 700; color: #1F8A5B; }
+.bu-set-auto { margin-top: 8px; width: 100%; }
 
 /* filas del modal de llegada */
 .rcf-items { display: flex; flex-direction: column; gap: 5px; }

@@ -1511,7 +1511,8 @@
           '<label>Precio conjunto<input inputmode="numeric" class="mono-input" value="' + (it.setPrice ? esc(dots(it.setPrice)) : '') + '" placeholder="1.600.000" data-bu-set-price="' + i + '"></label>' +
           '<label>Parte del motor<input inputmode="numeric" class="mono-input" value="' + (it.motorPart ? esc(dots(it.motorPart)) : '') + '" placeholder="1.000.000" data-bu-set-motor-part="' + i + '"></label>' +
           '</div>' +
-          '<div class="bu-set-foot">Parte de la bomba: <span class="mono">' + esc(fmtG(bombaPart)) + '</span> (se calcula sola)</div></div>';
+          '<div class="bu-set-foot">Parte de la bomba: <span class="mono">' + esc(fmtG(bombaPart)) + '</span> (se calcula sola)</div>' +
+          '<button type="button" class="set-btn-outline bu-set-auto" data-bu-set-auto="' + i + '">÷ Dividir según mis precios de venta</button></div>';
       } else {
         html += '<div class="bu-item">' +
           '<select data-bu-prod="' + i + '">' + productOptions(it.productId) + '</select>' +
@@ -1580,6 +1581,25 @@
         buForm.items[i].motorPart = n;
         var foot = el.closest('.bu-set').querySelector('.bu-set-foot .mono');
         foot.textContent = fmtG(Math.max(0, (Number(buForm.items[i].setPrice) || 0) - n));
+      });
+    });
+    // división automática del conjunto, proporcional a los precios de venta del catálogo
+    box.querySelectorAll('[data-bu-set-auto]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var i = Number(el.getAttribute('data-bu-set-auto'));
+        var it = buForm.items[i];
+        var setPrice = Number(it.setPrice) || 0;
+        var m = productById(it.motorId), b = productById(it.bombaId);
+        if (!m || !b) { toast('Elegí primero los dos productos del conjunto.'); return; }
+        if (setPrice <= 0) { toast('Cargá primero el precio del conjunto.'); return; }
+        var pm = Number(m.price) || 0, pb = Number(b.price) || 0;
+        if (pm <= 0 || pb <= 0) {
+          toast('Para dividir automático, cargá el precio de venta de los dos productos en el catálogo.');
+          return;
+        }
+        it.motorPart = Math.round(setPrice * pm / (pm + pb));
+        renderPurchaseForm();
+        toast('Dividido según tus precios de venta: ' + fmtG(it.motorPart) + ' / ' + fmtG(setPrice - it.motorPart) + '.');
       });
     });
   }
