@@ -47,6 +47,8 @@
     return String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   }
   function fmtG(n) { return '₲ ' + dots(n); }
+  // Con signo: para resultados que pueden ser negativos (caja, margen, neto)
+  function fmtGS(n) { return (Math.round(Number(n) || 0) < 0 ? '− ' : '') + '₲ ' + dots(n); }
   function mill(n) {
     n = Number(n) || 0;
     if (n >= 1e6) { return (Math.round(n / 1e5) / 10).toString().replace('.', ',') + ' M'; }
@@ -1761,7 +1763,8 @@
       if (!pp) return;
       pp.stock = Math.max(0, (Number(pp.stock) || 0) - qty);
       pp.adjusts = pp.adjusts || [];
-      pp.adjusts.push({ id: uid(), date: date, qty: qty, reason: reason });
+      // se guarda el costo vigente para valorizar la merma en el estado de resultados
+      pp.adjusts.push({ id: uid(), date: date, qty: qty, reason: reason, cost: Number(pp.cost) || 0 });
     });
     closeAdjustModal();
     vib(30);
@@ -2697,11 +2700,17 @@
   }
   function monthlyStats() {
     var map = {};
-    function bkt(ym) { if (!map[ym]) map[ym] = { facturado: 0, cobrado: 0, gastos: 0 }; return map[ym]; }
+    function bkt(ym) {
+      if (!map[ym]) map[ym] = { facturado: 0, cobrado: 0, gastos: 0, compras: 0, cogs: 0, mermas: 0 };
+      return map[ym];
+    }
     (state.data.jobs || []).forEach(function (j) {
       var jm = (j.date || '').slice(0, 7);
       var price = Number(j.price) || 0;
-      if (jm) bkt(jm).facturado += price;
+      if (jm) {
+        bkt(jm).facturado += price;
+        bkt(jm).cogs += itemsCost(j.items); // costo de los productos vendidos en el trabajo
+      }
       if (j.credit) {
         (j.payments || []).forEach(function (p) {
           var pm = (p.date || '').slice(0, 7);
@@ -2714,7 +2723,10 @@
     (state.data.sales || []).forEach(function (s) {
       var sm = (s.date || '').slice(0, 7);
       var total = saleTotal(s);
-      if (sm) bkt(sm).facturado += total;
+      if (sm) {
+        bkt(sm).facturado += total;
+        bkt(sm).cogs += itemsCost(s.items);
+      }
       if (s.credit) {
         (s.payments || []).forEach(function (p) {
           var pm = (p.date || '').slice(0, 7);
@@ -2728,9 +2740,36 @@
       var em = (e.date || '').slice(0, 7);
       if (em) bkt(em).gastos += Number(e.amount) || 0;
     });
+    // plata que salió por compras de mercadería (caja, no gasto): lo pagado al
+    // pedir, y al recibir la diferencia hasta el costo final (flete/aduana)
+    (state.data.purchases || []).forEach(function (b) {
+      var pm = (b.paidDate || '').slice(0, 7);
+      if (pm) bkt(pm).compras += Number(b.paidAmount) || 0;
+      if (b.status === 'received') {
+        var rm = (b.receivedDate || '').slice(0, 7);
+        var rest = (Number(b.totalFinal) || 0) - (Number(b.paidAmount) || 0);
+        if (rm && rest) bkt(rm).compras += rest;
+      }
+    });
+    // mermas valorizadas al costo (las nuevas guardan su costo; las viejas usan el vigente)
+    (state.data.products || []).forEach(function (p) {
+      (p.adjusts || []).forEach(function (a) {
+        var am = (a.date || '').slice(0, 7);
+        var unit = a.cost != null ? Number(a.cost) : (Number(p.cost) || 0);
+        if (am) bkt(am).mermas += (Number(a.qty) || 0) * unit;
+      });
+    });
     return Object.keys(map).sort().reverse().map(function (ym) {
       var m = map[ym];
-      return { ym: ym, mes: monthName(ym), anio: ym.slice(0, 4), facturado: m.facturado, cobrado: m.cobrado, gastos: m.gastos, resultado: m.cobrado - m.gastos };
+      var salio = m.gastos + m.compras;
+      var bruto = m.facturado - m.cogs - m.mermas;
+      return {
+        ym: ym, mes: monthName(ym), anio: ym.slice(0, 4),
+        facturado: m.facturado, cobrado: m.cobrado, gastos: m.gastos,
+        compras: m.compras, cogs: m.cogs, mermas: m.mermas,
+        salio: salio, caja: m.cobrado - salio,
+        bruto: bruto, neto: bruto - m.gastos
+      };
     });
   }
 
@@ -2756,28 +2795,56 @@
     }
 
     // totales generales (todo el historial)
-    var totF = 0, totC = 0, totG = 0;
-    rows.forEach(function (r) { totF += r.facturado; totC += r.cobrado; totG += r.gastos; });
-    var totR = totC - totG;
-    html += '<div class="reg-total"><div class="reg-total-row"><span>Facturado (total)</span>' +
-      '<span class="mono">' + esc(fmtG(totF)) + '</span></div>' +
-      '<div class="reg-total-row"><span>Cobrado (total)</span>' +
-      '<span class="mono blue">' + esc(fmtG(totC)) + '</span></div>' +
-      '<div class="reg-total-row"><span>Gastos (total)</span>' +
-      '<span class="mono red">− ' + esc(fmtG(totG)) + '</span></div>' +
-      '<div class="reg-total-row result"><span>Resultado (cobrado − gastos)</span>' +
-      '<span class="mono ' + (totR >= 0 ? 'green' : 'red') + '">' + esc(fmtG(totR)) + '</span></div></div>';
+    var T = { facturado: 0, cobrado: 0, gastos: 0, compras: 0, cogs: 0, mermas: 0 };
+    rows.forEach(function (r) {
+      T.facturado += r.facturado; T.cobrado += r.cobrado; T.gastos += r.gastos;
+      T.compras += r.compras; T.cogs += r.cogs; T.mermas += r.mermas;
+    });
+    var tSalio = T.gastos + T.compras;
+    var tCaja = T.cobrado - tSalio;
+    var tBruto = T.facturado - T.cogs - T.mermas;
+    var tNeto = tBruto - T.gastos;
+    var pct = function (n) { return T.facturado > 0 ? ' (' + Math.round(n / T.facturado * 100) + '%)' : ''; };
 
-    html += '<div class="reg-hint">Facturado = trabajos hechos ese mes. Cobrado = plata que entró. Resultado = cobrado − gastos del mes.</div>';
+    // ① Caja real: la plata que entró y salió de verdad
+    html += '<div class="reg-total"><div class="reg-total-title">💰 Caja — plata real</div>' +
+      '<div class="reg-total-row"><span>Entró (cobrado)</span>' +
+      '<span class="mono blue">' + esc(fmtG(T.cobrado)) + '</span></div>' +
+      '<div class="reg-total-row"><span>Salió en gastos</span>' +
+      '<span class="mono red">− ' + esc(fmtG(T.gastos)) + '</span></div>' +
+      '<div class="reg-total-row"><span>Salió en compras de mercadería</span>' +
+      '<span class="mono red">− ' + esc(fmtG(T.compras)) + '</span></div>' +
+      '<div class="reg-total-row result"><span>Flujo neto de caja</span>' +
+      '<span class="mono ' + (tCaja >= 0 ? 'green' : 'red') + '">' + esc(fmtGS(tCaja)) + '</span></div></div>';
+
+    // ② Resultado económico: la ganancia de verdad (la compra de stock NO es
+    //    gasto — el costo entra recién cuando se vende cada unidad)
+    html += '<div class="eco-card"><div class="eco-title">📊 Resultado económico</div>' +
+      '<div class="eco-row"><span>Ingresos facturados (trabajos + ventas)</span><span class="mono">' + esc(fmtG(T.facturado)) + '</span></div>' +
+      '<div class="eco-row"><span>− Costo de los productos vendidos</span><span class="mono red">− ' + esc(fmtG(T.cogs)) + '</span></div>' +
+      '<div class="eco-row"><span>− Mermas (roturas / pérdidas)</span><span class="mono red">− ' + esc(fmtG(T.mermas)) + '</span></div>' +
+      '<div class="eco-row sub"><span>Margen bruto' + esc(pct(tBruto)) + '</span><span class="mono ' + (tBruto >= 0 ? 'green' : 'red') + '">' + esc(fmtGS(tBruto)) + '</span></div>' +
+      '<div class="eco-row"><span>− Gastos operativos</span><span class="mono red">− ' + esc(fmtG(T.gastos)) + '</span></div>' +
+      '<div class="eco-row total"><span>Resultado neto' + esc(pct(tNeto)) + '</span><span class="mono ' + (tNeto >= 0 ? 'green' : 'red') + '">' + esc(fmtGS(tNeto)) + '</span></div></div>';
+
+    // ③ tarjetas de estado
+    var enViaje = pendingPurchases().reduce(function (a, b) { return a + (Number(b.paidAmount) || 0); }, 0);
+    html += '<div class="fin-cards">' +
+      '<div class="fin-card"><span class="fin-card-cap">Por cobrar</span><span class="fin-card-val mono">' + esc(fmtG(totalPending())) + '</span></div>' +
+      '<div class="fin-card"><span class="fin-card-cap">En stock (al costo)</span><span class="fin-card-val mono">' + esc(fmtG(inventoryValue())) + '</span></div>' +
+      '<div class="fin-card"><span class="fin-card-cap">Pedidos en viaje</span><span class="fin-card-val mono">' + esc(fmtG(enViaje)) + '</span></div>' +
+      '</div>';
+
+    html += '<div class="reg-hint">Caja = lo que entró menos lo que salió (incluida la mercadería comprada). Resultado económico = tu ganancia real: lo facturado menos lo que costó lo vendido, las mermas y los gastos.</div>';
 
     // meses agrupados por año, con subtotal anual
     var lastYear = null;
     rows.forEach(function (r) {
       if (r.anio !== lastYear) {
-        var yC = 0, yG = 0;
-        rows.forEach(function (x) { if (x.anio === r.anio) { yC += x.cobrado; yG += x.gastos; } });
+        var yC = 0, yS = 0;
+        rows.forEach(function (x) { if (x.anio === r.anio) { yC += x.cobrado; yS += x.salio; } });
         html += '<div class="reg-year"><span class="reg-year-lbl">' + esc(r.anio) + '</span>' +
-          '<span class="reg-year-nums">Cob. ' + esc(fmtG(yC)) + ' · Gas. ' + esc(fmtG(yG)) + ' · Res. ' + esc(fmtG(yC - yG)) + '</span></div>';
+          '<span class="reg-year-nums">Entró ' + esc(fmtG(yC)) + ' · Salió ' + esc(fmtG(yS)) + ' · Caja ' + esc(fmtGS(yC - yS)) + '</span></div>';
         lastYear = r.anio;
       }
       html += '<div class="reg-row" data-reg-month="' + esc(r.ym) + '">' +
@@ -2786,8 +2853,8 @@
         '<div class="reg-nums">' +
           '<div class="reg-num"><span class="reg-cap">Facturado</span><span class="reg-val mono">' + esc(fmtG(r.facturado)) + '</span></div>' +
           '<div class="reg-num"><span class="reg-cap">Cobrado</span><span class="reg-val mono blue">' + esc(fmtG(r.cobrado)) + '</span></div>' +
-          '<div class="reg-num"><span class="reg-cap">Gastos</span><span class="reg-val mono red">' + (r.gastos ? '− ' + esc(fmtG(r.gastos)) : esc(fmtG(0))) + '</span></div>' +
-          '<div class="reg-num"><span class="reg-cap">Resultado</span><span class="reg-val mono ' + (r.resultado >= 0 ? 'green' : 'red') + '">' + esc(fmtG(r.resultado)) + '</span></div>' +
+          '<div class="reg-num"><span class="reg-cap">Salió</span><span class="reg-val mono red">' + (r.salio ? '− ' + esc(fmtG(r.salio)) : esc(fmtG(0))) + '</span></div>' +
+          '<div class="reg-num"><span class="reg-cap">Caja</span><span class="reg-val mono ' + (r.caja >= 0 ? 'green' : 'red') + '">' + esc(fmtGS(r.caja)) + '</span></div>' +
         '</div></div>';
     });
 
@@ -2855,8 +2922,9 @@
     var totC = det.cobrado.reduce(function (a, x) { return a + x.amount; }, 0);
     var gastosMes = (state.data.expenses || []).filter(function (e) { return (e.date || '').slice(0, 7) === ym; })
       .sort(function (a, b) { return (a.date || '') < (b.date || '') ? -1 : 1; });
-    var totG = gastosMes.reduce(function (a, x) { return a + (Number(x.amount) || 0); }, 0);
-    var totR = totC - totG;
+    var mrow = monthlyStats().find(function (r) { return r.ym === ym; }) ||
+      { gastos: 0, compras: 0, cogs: 0, mermas: 0, salio: 0, caja: totC, bruto: totF, neto: totF };
+    var totG = mrow.gastos;
 
     var html = '<div class="detail-header">' +
       '<button type="button" class="btn-white js-back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Volver</button>' +
@@ -2866,9 +2934,18 @@
       '<div class="regd-tots">' +
         '<div class="regd-tot"><span class="regd-tot-cap">Facturado</span><span class="regd-tot-val mono">' + esc(fmtG(totF)) + '</span></div>' +
         '<div class="regd-tot"><span class="regd-tot-cap">Cobrado</span><span class="regd-tot-val mono blue">' + esc(fmtG(totC)) + '</span></div>' +
-        '<div class="regd-tot"><span class="regd-tot-cap">Gastos</span><span class="regd-tot-val mono red">' + (totG ? '− ' + esc(fmtG(totG)) : esc(fmtG(0))) + '</span></div>' +
-        '<div class="regd-tot"><span class="regd-tot-cap">Resultado</span><span class="regd-tot-val mono ' + (totR >= 0 ? 'green' : 'red') + '">' + esc(fmtG(totR)) + '</span></div>' +
+        '<div class="regd-tot"><span class="regd-tot-cap">Salió (gastos + compras)</span><span class="regd-tot-val mono red">' + (mrow.salio ? '− ' + esc(fmtG(mrow.salio)) : esc(fmtG(0))) + '</span></div>' +
+        '<div class="regd-tot"><span class="regd-tot-cap">Caja</span><span class="regd-tot-val mono ' + (mrow.caja >= 0 ? 'green' : 'red') + '">' + esc(fmtGS(mrow.caja)) + '</span></div>' +
       '</div></div>';
+
+    // resultado económico del mes
+    html += '<div class="eco-card"><div class="eco-title">📊 Resultado económico del mes</div>' +
+      '<div class="eco-row"><span>Ingresos facturados</span><span class="mono">' + esc(fmtG(totF)) + '</span></div>' +
+      '<div class="eco-row"><span>− Costo de los productos vendidos</span><span class="mono red">− ' + esc(fmtG(mrow.cogs)) + '</span></div>' +
+      '<div class="eco-row"><span>− Mermas</span><span class="mono red">− ' + esc(fmtG(mrow.mermas)) + '</span></div>' +
+      '<div class="eco-row sub"><span>Margen bruto</span><span class="mono ' + (mrow.bruto >= 0 ? 'green' : 'red') + '">' + esc(fmtGS(mrow.bruto)) + '</span></div>' +
+      '<div class="eco-row"><span>− Gastos operativos</span><span class="mono red">− ' + esc(fmtG(totG)) + '</span></div>' +
+      '<div class="eco-row total"><span>Resultado neto</span><span class="mono ' + (mrow.neto >= 0 ? 'green' : 'red') + '">' + esc(fmtGS(mrow.neto)) + '</span></div></div>';
 
     // Facturación del mes (trabajos hechos ese mes)
     html += '<div class="panel"><div class="panel-label">Facturado · ' + det.facturado.length +
@@ -2922,6 +2999,34 @@
       html += '<div class="panel-empty">No hubo gastos registrados este mes.</div>';
     }
     html += '</div>';
+
+    // Compras de mercadería pagadas este mes (caja, no gasto)
+    var comprasMes = [];
+    (state.data.purchases || []).forEach(function (b) {
+      var names = (b.items || []).map(function (it) {
+        var p = productById(it.productId);
+        return (p ? p.name : '(producto eliminado)') + ' × ' + it.qty;
+      }).join(' · ');
+      if ((b.paidDate || '').slice(0, 7) === ym && (Number(b.paidAmount) || 0)) {
+        comprasMes.push({ date: b.paidDate, names: names, note: b.note, amount: Number(b.paidAmount) || 0, concept: b.type === 'import' ? 'Pago del pedido' : 'Compra local' });
+      }
+      if (b.status === 'received' && (b.receivedDate || '').slice(0, 7) === ym) {
+        var rest = (Number(b.totalFinal) || 0) - (Number(b.paidAmount) || 0);
+        if (rest) comprasMes.push({ date: b.receivedDate, names: names, note: b.note, amount: rest, concept: 'Flete / aduana al recibir' });
+      }
+    });
+    comprasMes.sort(function (a, b) { return (a.date || '') < (b.date || '') ? -1 : 1; });
+    if (comprasMes.length) {
+      html += '<div class="panel"><div class="panel-label">Compras de mercadería · ' + comprasMes.length +
+        (comprasMes.length === 1 ? ' pago' : ' pagos') + '</div><div class="regd-list">' +
+        comprasMes.map(function (x) {
+          return '<div class="regd-row"><div class="regd-main">' +
+            '<div class="regd-name">' + esc(x.concept + (x.note ? ' · ' + x.note : '')) + '</div>' +
+            '<div class="regd-sub">' + esc(x.names + ' · ' + ddShort(x.date)) + '</div></div>' +
+            '<span class="regd-amt mono red">− ' + esc(fmtG(x.amount)) + '</span></div>';
+        }).join('') + '</div>' +
+        '<div class="set-hint" style="margin-top:8px;">La mercadería comprada no es un gasto: es inversión en stock. Su costo entra al resultado recién cuando se vende cada unidad.</div></div>';
+    }
 
     box.innerHTML = html;
     box.querySelector('.js-back').addEventListener('click', function () { go('registro'); });

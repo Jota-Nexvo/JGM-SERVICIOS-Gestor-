@@ -1066,6 +1066,48 @@ button, input, textarea, select { font-family: inherit; }
 .reg-total-row.result { border-top: 1px solid rgba(255,255,255,0.16); margin-top: 5px; padding-top: 8px; }
 
 .reg-hint { font-size: 12px; color: #6B7690; line-height: 1.4; margin: 0 2px; }
+.reg-total-title { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #B8C0E4; margin-bottom: 6px; }
+
+/* Estado de resultados (mirada económica) */
+.eco-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F4;
+  border-radius: 14px;
+  padding: 14px 18px;
+}
+.eco-title { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #6B7690; margin-bottom: 7px; }
+.eco-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #4A5468;
+  padding: 3px 0;
+}
+.eco-row .mono { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 13.5px; color: #232A56; }
+.eco-row .mono.red { color: #C2452D; }
+.eco-row .mono.green { color: #1F8A5B; }
+.eco-row.sub { border-top: 1px dashed #E2E8F4; margin-top: 4px; padding-top: 7px; font-weight: 600; color: #232A56; }
+.eco-row.total { border-top: 2px solid #232A56; margin-top: 5px; padding-top: 8px; font-weight: 700; color: #232A56; }
+.eco-row.total .mono { font-size: 16px; font-weight: 700; }
+
+/* Tarjetas de estado financiero */
+.fin-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.fin-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F4;
+  border-radius: 12px;
+  padding: 11px 12px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.fin-card-cap { font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #8A94C4; }
+.fin-card-val { font-size: 13px; font-weight: 700; color: #232A56; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 420px) {
+  .fin-cards { grid-template-columns: 1fr 1fr; }
+}
 
 .reg-year {
   display: flex;

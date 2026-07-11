@@ -303,6 +303,33 @@ Fases del plan original (todas hechas):
 - `absorbOverlay(modal)`: generalización del fix de historial de C2, aplicado
   también a guardar trabajo nuevo y venta (modal → ficha sin carrera).
 
+### Etapa C4 de la ampliación (2026-07-11) — Estado de resultados
+
+- **`monthlyStats()` ampliado** con, por mes: `compras` (plata que salió por
+  mercadería: `paidAmount` en el mes del pago + `totalFinal − paidAmount` en
+  el mes de la llegada), `cogs` (costo congelado de lo vendido, por fecha de
+  venta/trabajo), `mermas` (valorizadas al costo — las nuevas guardan
+  `adjusts[].cost` como snapshot; las viejas usan el costo vigente),
+  `salio = gastos + compras`, `caja = cobrado − salio`,
+  `bruto = facturado − cogs − mermas`, `neto = bruto − gastos`.
+- **Pantalla Registro/Finanzas** con las dos miradas acordadas:
+  1. **💰 Caja — plata real** (tarjeta oscura, vista principal): Entró
+     (cobrado) − Salió en gastos − Salió en compras = **Flujo neto de caja**.
+  2. **📊 Resultado económico**: Ingresos facturados − Costo de productos
+     vendidos − Mermas = **Margen bruto (%)** − Gastos = **Resultado neto
+     (%)**. La compra de stock NO es gasto (es inventario); el costo entra
+     recién al vender.
+  3. Tarjetas de estado: **Por cobrar / En stock (al costo) / Pedidos en
+     viaje**.
+  - Filas mensuales: Facturado · Cobrado · **Salió** · **Caja** (subtotales
+    anuales Entró/Salió/Caja).
+- **Detalle del mes**: totales de caja + bloque "Resultado económico del
+  mes" + panel **"Compras de mercadería"** (pagos de pedidos y flete/aduana
+  del mes, con nota de que no son gasto).
+- **`fmtGS()`**: formateador con signo — los valores que pueden ser negativos
+  (caja, margen, neto) ahora muestran el "−" (antes `dots()` usaba valor
+  absoluto y una caja negativa se veía positiva).
+
 ## 5. Modelo de datos
 
 Clave de `localStorage`: **`jgm_gestor_v1`**. Estructura:
@@ -524,6 +551,6 @@ por el dueño — no re-preguntar.
   - **Solo guaraníes.** Los precios reales de China los va a cargar el
     dueño solo cuando los tenga (la app queda lista; nada pre-cargado).
   - Sub-fases de construcción: **C1 Gastos+Personal: HECHA** (ver sección 4) →
-    **C2 Stock+Compras: HECHA** → **C3 Ventas+Garantías+Trabajos: HECHA**
-    (ver sección 4) → C4 Finanzas → C5 integraciones (respaldos con todo lo
-    nuevo, Ajustes, seed demo, reset, popstate, bump de sw.js).
+    **C2 Stock+Compras: HECHA** → **C3 Ventas+Garantías+Trabajos: HECHA** →
+    **C4 Finanzas: HECHA** (ver sección 4) → C5 integraciones (barra de
+    navegación de 5, verificación final end-to-end, docs).
