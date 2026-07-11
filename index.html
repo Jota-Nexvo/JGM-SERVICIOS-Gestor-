@@ -38,6 +38,12 @@
         </span>
         <span class="badge js-bell-badge">0</span>
       </button>
+      <button type="button" class="nav-item" data-nav="stock">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h16v12H4z"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M4 12h16"/></svg>Stock
+      </button>
+      <button type="button" class="nav-item" data-nav="registro">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M6 16l4-5 4 3 4-7"/></svg>Finanzas
+      </button>
       <button type="button" class="nav-item" data-nav="ajustes">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h9M17.5 7H20M4 17h2.5M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="8.5" cy="17" r="2.2"/></svg>Ajustes
       </button>
@@ -76,6 +82,9 @@
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#232A56" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 1 1 12 0c0 4.2 1.6 5.4 1.6 5.4H4.4S6 13.2 6 9"/><path d="M10 18a2.2 2.2 0 0 0 4 0"/></svg>
         <span class="badge badge-corner js-bell-badge">0</span>
       </button>
+      <button type="button" class="bell-btn gear-btn-mobile" data-nav="ajustes" aria-label="Abrir ajustes">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#232A56" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h9M17.5 7H20M4 17h2.5M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="8.5" cy="17" r="2.2"/></svg>
+      </button>
     </header>
 
     <!-- Contenido -->
@@ -112,6 +121,26 @@
         <div id="regmes-content" class="stack-lg"></div>
       </section>
 
+      <section class="screen" id="screen-gastos">
+        <div id="gastos-content" class="stack-lg"></div>
+      </section>
+
+      <section class="screen" id="screen-personal">
+        <div id="personal-content" class="stack-lg"></div>
+      </section>
+
+      <section class="screen" id="screen-stock">
+        <div id="stock-content" class="stack"></div>
+      </section>
+
+      <section class="screen" id="screen-producto">
+        <div id="producto-content" class="stack"></div>
+      </section>
+
+      <section class="screen" id="screen-compras">
+        <div id="compras-content" class="stack-lg"></div>
+      </section>
+
       <section class="screen" id="screen-ajustes">
         <div id="ajustes-content" class="stack-lg"></div>
         <input type="file" id="import-input" accept=".json,application/json" hidden>
@@ -137,8 +166,11 @@
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 1 1 12 0c0 4.2 1.6 5.4 1.6 5.4H4.4S6 13.2 6 9"/><path d="M10 18a2.2 2.2 0 0 0 4 0"/></svg><span>Cobros</span>
       <span class="badge badge-tab js-bell-badge">0</span>
     </button>
-    <button type="button" class="tab-item" data-nav="ajustes">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h9M17.5 7H20M4 17h2.5M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="8.5" cy="17" r="2.2"/></svg><span>Ajustes</span>
+    <button type="button" class="tab-item" data-nav="stock">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h16v12H4z"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M4 12h16"/></svg><span>Stock</span>
+    </button>
+    <button type="button" class="tab-item" data-nav="registro">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M6 16l4-5 4 3 4-7"/></svg><span>Finanzas</span>
     </button>
   </nav>
 
@@ -203,8 +235,19 @@
               <input type="date" id="jf-date">
             </div>
             <div>
-              <div class="field-label">Precio (₲) *</div>
+              <div class="field-label" id="jf-price-label">Mano de obra (₲) *</div>
               <input id="jf-price" inputmode="numeric" autocomplete="off" class="mono-input" placeholder="14.500.000">
+            </div>
+          </div>
+          <div>
+            <div class="field-label">Productos vendidos en este trabajo (del stock)</div>
+            <div id="jf-items"></div>
+            <div class="set-btn-row" style="margin-top:6px;">
+              <button type="button" class="set-btn-outline" id="jf-add-item">+ Producto del stock</button>
+            </div>
+            <div class="preview-box" id="jf-total-box" style="margin-top:8px;">
+              <span>Total del trabajo (mano de obra + productos)</span>
+              <span class="preview-amount" id="jf-total">₲ 0</span>
             </div>
           </div>
           <div>
@@ -316,6 +359,306 @@
           <div class="modal-actions">
             <button type="button" class="btn-cancel" id="pp-cancel">Cancelar</button>
             <button type="button" class="btn-save" id="pp-save">Guardar nueva fecha</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Modal gasto ===== -->
+  <div class="modal-overlay" id="modal-expense" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ef-title">
+      <div class="modal-body">
+        <div class="modal-title" id="ef-title">Registrar gasto</div>
+        <div class="form-stack">
+          <div>
+            <div class="field-label">Categoría</div>
+            <div class="chip-row" id="ef-cats"></div>
+          </div>
+          <div id="ef-sub-wrap" hidden>
+            <div class="field-label">Tipo de viático (opcional)</div>
+            <div class="chip-row" id="ef-subs"></div>
+          </div>
+          <div id="ef-staff-wrap" hidden>
+            <div class="field-label">¿A qué personal le pagaste? *</div>
+            <select id="ef-staff"><option value="">Elegir personal…</option></select>
+            <div class="set-hint" id="ef-staff-hint" hidden>Todavía no cargaste personales. Agregalos desde la pantalla «Personales».</div>
+          </div>
+          <div id="ef-job-wrap" hidden>
+            <div class="field-label">¿Por qué trabajo? (opcional)</div>
+            <select id="ef-job"><option value="">Sin trabajo asociado</option></select>
+          </div>
+          <div class="grid-2">
+            <div>
+              <div class="field-label">Fecha</div>
+              <input type="date" id="ef-date">
+            </div>
+            <div>
+              <div class="field-label">Monto (₲) *</div>
+              <input id="ef-amount" inputmode="numeric" autocomplete="off" class="mono-input" placeholder="150.000">
+            </div>
+          </div>
+          <div>
+            <div class="field-label">Nota (opcional)</div>
+            <input id="ef-note" type="text" autocomplete="off" placeholder="Ej.: nafta ida y vuelta a Pirayú">
+          </div>
+          <div class="form-err" id="ef-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="ef-cancel">Cancelar</button>
+            <button type="button" class="btn-save" id="ef-save">Guardar gasto</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Modal venta ===== -->
+  <div class="modal-overlay" id="modal-sale" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="vf-title">
+      <div class="modal-body">
+        <div class="modal-title" id="vf-title">Vender producto</div>
+        <div class="form-stack">
+          <div>
+            <div class="field-label">Cliente * <span class="field-hint">(siempre con cliente, por la garantía)</span></div>
+            <select id="vf-client"><option value="">Elegir cliente…</option></select>
+          </div>
+          <div>
+            <div class="field-label">Productos vendidos</div>
+            <div id="vf-items"></div>
+            <div class="set-btn-row" style="margin-top:6px;">
+              <button type="button" class="set-btn-outline" id="vf-add-item">+ Producto</button>
+              <button type="button" class="set-btn-outline" id="vf-add-both">+ Motor y bomba (ambas)</button>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <div class="field-label">Fecha de venta</div>
+              <input type="date" id="vf-date">
+            </div>
+            <div>
+              <div class="field-label">Forma de pago</div>
+              <div class="segmented">
+                <div id="vf-contado">Contado</div>
+                <div id="vf-credito">Crédito</div>
+              </div>
+            </div>
+          </div>
+          <div class="form-stack" id="vf-credit-block">
+            <div class="grid-2">
+              <div>
+                <div class="field-label">Seña / entrega inicial</div>
+                <input id="vf-down" inputmode="numeric" autocomplete="off" class="mono-input" placeholder="0">
+              </div>
+              <div>
+                <div class="field-label">Fecha de cobro</div>
+                <input type="date" id="vf-due">
+              </div>
+            </div>
+          </div>
+          <div class="preview-box">
+            <span>Total de la venta</span>
+            <span class="preview-amount" id="vf-total">₲ 0</span>
+          </div>
+          <div class="preview-box green" id="vf-saldo-box" hidden>
+            <span>Saldo que quedará</span>
+            <span class="preview-amount red" id="vf-saldo">₲ 0</span>
+          </div>
+          <div class="form-err" id="vf-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="vf-cancel">Cancelar</button>
+            <button type="button" class="btn-save btn-save-green" id="vf-save">Guardar venta</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Modal producto ===== -->
+  <div class="modal-overlay" id="modal-product" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="prf-title">
+      <div class="modal-body">
+        <div class="modal-title" id="prf-title">Nuevo producto</div>
+        <div class="form-stack">
+          <div>
+            <div class="field-label">Nombre *</div>
+            <input id="prf-name" type="text" autocomplete="off" placeholder="Ej.: Motor sumergible 1.5 HP">
+          </div>
+          <div>
+            <div class="field-label">Categoría</div>
+            <div class="chip-row" id="prf-cats"></div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <div class="field-label">Precio de venta (₲)</div>
+              <input id="prf-price" inputmode="numeric" autocomplete="off" class="mono-input" placeholder="1.900.000">
+            </div>
+            <div>
+              <div class="field-label">Venta mínima (₲)</div>
+              <input id="prf-minprice" inputmode="numeric" autocomplete="off" class="mono-input" placeholder="1.700.000">
+            </div>
+          </div>
+          <div class="set-hint">La <b>venta mínima</b> es tu techo de descuento: si en una venta ponés un precio más bajo, la app te avisa (pero te deja vender — vos decidís).</div>
+          <div class="grid-2">
+            <div>
+              <div class="field-label">Avisar si quedan ≤</div>
+              <input type="number" id="prf-min" min="0" max="999" placeholder="1">
+            </div>
+            <div></div>
+          </div>
+          <div>
+            <div class="field-label">Notas</div>
+            <textarea id="prf-notes" class="ta-sm" placeholder="Modelo, medidas, proveedor…"></textarea>
+          </div>
+          <div class="set-hint">El stock y el costo no se cargan acá: entran solos con las <b>compras</b> (y bajan con ventas y ajustes).</div>
+          <div class="form-err" id="prf-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="prf-cancel">Cancelar</button>
+            <button type="button" class="btn-save" id="prf-save">Guardar producto</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Modal compra (pedido / compra local) ===== -->
+  <div class="modal-overlay" id="modal-purchase" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="buf-title">
+      <div class="modal-body">
+        <div class="modal-title" id="buf-title">Nueva compra</div>
+        <div class="form-stack">
+          <div>
+            <div class="field-label">Tipo de compra</div>
+            <div class="segmented">
+              <div id="buf-import">Importación</div>
+              <div id="buf-local">Local</div>
+            </div>
+          </div>
+          <div>
+            <div class="field-label" id="buf-items-label">Productos del pedido</div>
+            <div id="buf-items"></div>
+            <div class="set-btn-row" style="margin-top:8px;">
+              <button type="button" class="set-btn-outline" id="buf-add-item">+ Producto</button>
+              <button type="button" class="set-btn-outline" id="buf-add-set">+ Conjunto motor+bomba</button>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <div class="field-label" id="buf-date-label">Fecha del pago</div>
+              <input type="date" id="buf-date">
+            </div>
+            <div id="buf-paid-wrap">
+              <div class="field-label">Pagado (₲)</div>
+              <input id="buf-paid" inputmode="numeric" autocomplete="off" class="mono-input" placeholder="0">
+            </div>
+          </div>
+          <div>
+            <div class="field-label">Nota (opcional)</div>
+            <input id="buf-note" type="text" autocomplete="off" placeholder="Ej.: pedido a proveedor de Guangzhou">
+          </div>
+          <div class="preview-box">
+            <span id="buf-sum-label">Suma de los productos</span>
+            <span class="preview-amount" id="buf-sum">₲ 0</span>
+          </div>
+          <div class="set-hint" id="buf-hint">La importación se carga en 2 pasos: ahora «pagué el pedido», y cuando llegue la mercadería tocás <b>«Llegó»</b> y cargás el costo total final (con flete y aduana) — ahí recién entra el stock.</div>
+          <div class="form-err" id="buf-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="buf-cancel">Cancelar</button>
+            <button type="button" class="btn-save" id="buf-save">Guardar compra</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Modal llegada de mercadería ===== -->
+  <div class="modal-overlay" id="modal-receive" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rcf-title">
+      <div class="modal-body">
+        <div class="modal-title" id="rcf-title">Llegó la mercadería</div>
+        <div class="modal-sub" id="rcf-sub"></div>
+        <div class="form-stack">
+          <div id="rcf-items" class="rcf-items"></div>
+          <div class="grid-2">
+            <div>
+              <div class="field-label">Fecha de llegada</div>
+              <input type="date" id="rcf-date">
+            </div>
+            <div>
+              <div class="field-label">Costo total final (₲) *</div>
+              <input id="rcf-total" inputmode="numeric" autocomplete="off" class="mono-input" placeholder="15.000.000">
+            </div>
+          </div>
+          <div class="set-hint">Cargá el costo total <b>con todo incluido</b> (producto + flete + aduana + transporte). La app reparte la diferencia entre los productos según su valor y calcula el costo real por unidad.</div>
+          <div class="form-err" id="rcf-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="rcf-cancel">Cancelar</button>
+            <button type="button" class="btn-save btn-save-green" id="rcf-save">Ingresar al stock</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Modal ajuste de stock (merma) ===== -->
+  <div class="modal-overlay" id="modal-adjust" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ajf-title">
+      <div class="modal-body">
+        <div class="modal-title" id="ajf-title">Ajustar stock</div>
+        <div class="modal-sub" id="ajf-sub"></div>
+        <div class="form-stack">
+          <div class="grid-2">
+            <div>
+              <div class="field-label">Unidades a descontar *</div>
+              <input type="number" id="ajf-qty" min="1" max="999" value="1">
+            </div>
+            <div>
+              <div class="field-label">Fecha</div>
+              <input type="date" id="ajf-date">
+            </div>
+          </div>
+          <div>
+            <div class="field-label">Motivo *</div>
+            <input id="ajf-reason" type="text" autocomplete="off" placeholder="Ej.: llegó roto de fábrica">
+          </div>
+          <div class="set-hint">La pérdida queda registrada como <b>merma</b> y se resta en el estado de resultados — así el stock de la app siempre coincide con el real.</div>
+          <div class="form-err" id="ajf-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="ajf-cancel">Cancelar</button>
+            <button type="button" class="btn-save" id="ajf-save">Descontar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Modal personal ===== -->
+  <div class="modal-overlay" id="modal-staff" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sf-title">
+      <div class="modal-body">
+        <div class="modal-title" id="sf-title">Agregar personal</div>
+        <div class="form-stack">
+          <div>
+            <div class="field-label">Nombre *</div>
+            <input id="sf-name" type="text" autocomplete="off" placeholder="Ej.: Carlos Benítez">
+          </div>
+          <div class="grid-2">
+            <div>
+              <div class="field-label">Teléfono</div>
+              <input id="sf-phone" type="tel" autocomplete="off" placeholder="Ej.: 0981 456 789">
+            </div>
+            <div>
+              <div class="field-label">C.I.</div>
+              <input id="sf-ci" type="text" autocomplete="off" placeholder="Ej.: 1.234.567-8">
+            </div>
+          </div>
+          <div>
+            <div class="field-label">Notas</div>
+            <textarea id="sf-notes" class="ta-sm" placeholder="Ej.: ayudante de perforación, vive en Luque…"></textarea>
+          </div>
+          <div class="form-err" id="sf-err" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="sf-cancel">Cancelar</button>
+            <button type="button" class="btn-save" id="sf-save">Guardar personal</button>
           </div>
         </div>
       </div>
