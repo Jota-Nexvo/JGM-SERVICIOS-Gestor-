@@ -2348,7 +2348,8 @@
     var js = jobsOf(c.id).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
     var vs = salesOf(c.id).sort(function (a, b) { return (a.date || '') < (b.date || '') ? 1 : -1; });
     var wa = waLink(c.phone);
-    var meta = [c.ci || '', c.phone || ''].filter(Boolean).join(' · ') || 'Sin datos de contacto';
+    var docVal = (c.ci || '').trim() || '—';
+    var telVal = (c.phone || '').trim() || '—';
     var delLabel = state.confirmKey === 'delc:' + c.id ? '¿Seguro? Tocá otra vez' : 'Eliminar';
 
     var html = '<div class="detail-header">' +
@@ -2361,7 +2362,8 @@
       '<div class="avatar-lg">' + esc(initials(c.name)) + '</div>' +
       '<div class="info-main"><div class="info-name">' + esc(c.name) + '</div>' +
       '<div class="info-address">' + esc(c.address || 'Sin dirección cargada') + '</div>' +
-      '<div class="info-meta">' + esc(meta) + '</div></div>' +
+      '<div class="info-meta"><span class="info-meta-label">CI/RUC.:</span> ' + esc(docVal) + '</div>' +
+      '<div class="info-meta"><span class="info-meta-label">Tel.:</span> ' + esc(telVal) + '</div></div>' +
       (wa ? '<a class="btn-wa" href="' + esc(wa) + '" target="_blank" rel="noopener">' +
         '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L4 20l1-4.5A8.5 8.5 0 1 1 21 11.5"/></svg>WhatsApp</a>' : '') +
       '</div>' +
