@@ -128,6 +128,12 @@ Fases del plan original (todas hechas):
   lugar") y un campo de ubicación: "Marcar mi ubicación" (GPS →
   `https://www.google.com/maps?q=lat,lng`), "Pegar link" manual, "Ver en
   el mapa", "Quitar". Se guarda en `client.mapsUrl`.
+- **Datos de contacto etiquetados en la ficha** (2026-07-12): debajo del
+  nombre del cliente, el documento y el teléfono ya no aparecen pegados con un
+  punto ("80104827-3 · 0982754854"), sino en **dos líneas rotuladas**:
+  `CI/RUC.: …` y `Tel.: …` (etiqueta en negrita). Si falta un dato se muestra
+  "—" en su lugar. En `renderCliente` (`js/app.js`): `docVal`/`telVal` +
+  clase CSS `.info-meta-label`.
 - **Pagos sin esperar la fecha**: botón "+ Registrar pago" a nivel del
   cliente en su ficha (antes solo se podía expandiendo un trabajo puntual).
   Si el cliente tiene varios trabajos con saldo, el modal muestra un
