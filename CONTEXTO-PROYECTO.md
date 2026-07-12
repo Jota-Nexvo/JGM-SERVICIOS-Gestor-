@@ -262,8 +262,14 @@ Fases del plan original (todas hechas):
   `#modal-receive`): fecha + costo total final → **prorrateo proporcional al
   valor** (`unitCost = unitBase × totalFinal/sumaBase`, preview en vivo) →
   entra stock con **promedio ponderado** (`applyPurchaseToStock`). Local:
-  entra directo con `unitCost = unitBase`. Pedidos en viaje se pueden borrar;
-  los recibidos no (protege la integridad del stock).
+  entra directo con `unitCost = unitBase`. Pedidos en viaje se pueden borrar
+  siempre (no tocaron stock todavía). Pedidos **recibidos** también se pueden
+  borrar (2026-07-12): `delPurchase` detecta `status==='received'` y **revierte**
+  el efecto exacto de ese pedido en cada producto (resta `qty` del stock y
+  recalcula el promedio ponderado quitando `qty × unitCost` del valor total:
+  `nuevoCosto = (stock×costo − qty×unitCost) / (stock−qty)`), clampeando a 0
+  si ya no queda esa cantidad en stock (por ventas/mermas posteriores de ese
+  lote) — en ese caso el costo puede quedar aproximado, no exacto.
 - **Inicio**: tarjeta de acceso "Stock y productos" (con pedidos en viaje) y
   banner ⚠ de stock bajo.
 - **FIX de historial (bug preexistente)**: guardar un cliente/producto nuevo

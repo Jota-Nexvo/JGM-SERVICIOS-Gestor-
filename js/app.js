@@ -1699,11 +1699,32 @@
     vib(30);
     toast(isImport ? 'Pedido guardado — cuando llegue, tocá «Llegó la mercadería».' : 'Compra guardada y stock actualizado.');
   }
+  // Borrar un pedido "en viaje" = simple. Borrar uno ya "recibido" = deshacerlo:
+  // las unidades y su costo salen del stock (revierte el promedio ponderado).
   function delPurchase(id) {
+    var b = (state.data.purchases || []).find(function (x) { return x.id === id; });
+    var wasReceived = !!(b && b.status === 'received');
     mutate(function (d) {
-      d.purchases = (d.purchases || []).filter(function (b) { return b.id !== id; });
+      var pur = (d.purchases || []).find(function (x) { return x.id === id; });
+      if (!pur) return;
+      if (pur.status === 'received') {
+        (pur.items || []).forEach(function (it) {
+          var p = (d.products || []).find(function (x) { return x.id === it.productId; });
+          if (!p) return;
+          var qty = Number(it.qty) || 0;
+          if (qty <= 0) return;
+          var oldStock = Number(p.stock) || 0;
+          var oldValue = oldStock * (Number(p.cost) || 0);
+          var newStock = Math.max(0, oldStock - qty);
+          var removedQty = oldStock - newStock;
+          p.stock = newStock;
+          p.cost = newStock > 0 ? Math.max(0, (oldValue - removedQty * (Number(it.unitCost) || 0)) / newStock) : 0;
+        });
+      }
+      d.purchases = (d.purchases || []).filter(function (x) { return x.id !== id; });
     });
-    toast('Pedido eliminado.');
+    vib(30);
+    toast(wasReceived ? 'Pedido eliminado — unidades y costo revertidos del stock.' : 'Pedido eliminado.');
   }
 
   // ===== Modal llegada de mercadería (paso 2 con prorrateo) =====
@@ -3470,13 +3491,16 @@
     html += '<div class="section-label gray">Recibidas · ' + recv.length + '</div>';
     if (recv.length) {
       html += recv.map(function (b) {
+        var delLbl = state.confirmKey === 'delpur:' + b.id ? '¿Seguro? (revierte el stock)' : '✕';
         return '<div class="pur-card">' +
           '<div class="alert-top"><span class="recv-chip">' + (b.type === 'import' ? '🚢 Importación' : '🏪 Local') + '</span>' +
           '<span class="alert-date">llegó ' + esc(dd(b.receivedDate)) + '</span></div>' +
           (b.note ? '<div class="pur-note">' + esc(b.note) + '</div>' : '') +
           '<div class="pur-items">' + esc(itemsTxt(b)) + '</div>' +
           '<div class="pur-paid">Costo total final: <span class="mono">' + esc(fmtG(b.totalFinal)) + '</span></div>' +
-          '</div>';
+          '<div class="alert-actions">' +
+          '<button type="button" class="btn-ghost-danger" data-pur-del="' + esc(b.id) + '">' + delLbl + '</button>' +
+          '</div></div>';
       }).join('');
     } else {
       html += '<div class="dashed-card">Todavía no hay compras recibidas.</div>';

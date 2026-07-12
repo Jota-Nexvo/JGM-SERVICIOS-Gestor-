@@ -2,7 +2,7 @@
    App 100% offline: precachea el app shell y sirve cache-first.
    Al cambiar CSS/JS, subir el numero de CACHE para invalidar. */
 
-var CACHE = 'jgm-gestor-v5';
+var CACHE = 'jgm-gestor-v6';
 var APP_SHELL = [
   './',
   './index.html',
