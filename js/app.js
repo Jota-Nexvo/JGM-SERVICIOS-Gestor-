@@ -2869,24 +2869,16 @@
       return { ym: ym, mes: mesCorto(ym), entro: r.cobrado || 0, salio: r.salio || 0 };
     });
   }
-  // 2) Por cobrar a fin de cada mes: total facturado a crédito acumulado menos
-  //    los pagos acumulados hasta ese mes (misma base que "Por cobrar" de hoy)
-  function receivableSeries(n) {
-    var ev = [];
-    (state.data.jobs || []).forEach(function (j) {
-      if (!j.credit) return;
-      if (j.date) ev.push({ d: j.date.slice(0, 7), v: Number(j.price) || 0 });
-      (j.payments || []).forEach(function (p) { if (p.date) ev.push({ d: p.date.slice(0, 7), v: -(Number(p.amount) || 0) }); });
-    });
-    (state.data.sales || []).forEach(function (s) {
-      if (!s.credit) return;
-      if (s.date) ev.push({ d: s.date.slice(0, 7), v: saleTotal(s) });
-      (s.payments || []).forEach(function (p) { if (p.date) ev.push({ d: p.date.slice(0, 7), v: -(Number(p.amount) || 0) }); });
-    });
+  // 2) Crecimiento del negocio: facturación y ganancia neta por mes.
+  //    Facturación = todo lo facturado (trabajos + ventas) en el mes.
+  //    Ganancia neta = facturado − costo de lo vendido − mermas − gastos
+  //    (el mismo "Resultado neto" de la tarjeta económica, mes a mes; puede
+  //    ser negativa si los costos y gastos superan lo facturado ese mes).
+  function growthSeries(n) {
+    var by = {}; monthlyStats().forEach(function (r) { by[r.ym] = r; });
     return lastMonths(n).map(function (ym) {
-      var saldo = 0;
-      ev.forEach(function (e) { if (e.d <= ym) saldo += e.v; });
-      return { ym: ym, mes: mesCorto(ym), saldo: Math.max(0, saldo) };
+      var r = by[ym] || {};
+      return { ym: ym, mes: mesCorto(ym), facturado: r.facturado || 0, neto: r.neto || 0 };
     });
   }
   // 3) Gastos de un mes agrupados por categoría (mayor a menor)
@@ -2958,33 +2950,50 @@
       '<span><i class="sw" style="background:' + CHART_RED + '"></i>Salió (gastos + compras)</span></div>' +
       '<svg class="chart-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Entradas y salidas por mes">' + svg + '</svg>';
   }
-  // Línea: por cobrar a fin de mes
-  function lineChartHtml() {
-    var data = receivableSeries(8);
-    var maxV = niceMax(Math.max.apply(null, data.map(function (d) { return d.saldo; }).concat([1])));
-    if (!data.some(function (d) { return d.saldo; })) {
-      return '<div class="chart-empty">Todavía no hay deudas a crédito para mostrar.</div>';
+  // Línea combinada: facturación (arriba) y ganancia neta (abajo) por mes.
+  // El eje baja de cero cuando algún mes cerró con pérdida.
+  function growthChartHtml() {
+    var data = growthSeries(8);
+    if (!data.some(function (d) { return d.facturado || d.neto; })) {
+      return '<div class="chart-empty">Todavía no hay trabajos ni ventas para mostrar.</div>';
     }
-    var W = 340, H = 168, padL = 34, padR = 10, padT = 16, padB = 22;
+    var vals = [];
+    data.forEach(function (d) { vals.push(d.facturado, d.neto); });
+    var top = niceMax(Math.max.apply(null, vals.concat([1])));
+    var minRaw = Math.min.apply(null, vals.concat([0]));
+    var bottom = minRaw < 0 ? -niceMax(Math.abs(minRaw)) : 0;
+    var W = 340, H = 176, padL = 38, padR = 12, padT = 22, padB = 22;
     var plotW = W - padL - padR, plotH = H - padT - padB;
     function x(i) { return padL + (plotW / (data.length - 1)) * i; }
-    function y(v) { return padT + plotH - (v / maxV) * plotH; }
+    function y(v) { return padT + plotH - ((v - bottom) / (top - bottom)) * plotH; }
     var svg = '';
-    [0, maxV / 2, maxV].forEach(function (t) {
-      svg += svgEl('line', { x1: padL, y1: y(t), x2: W - padR, y2: y(t), class: 'grid-line' });
-      svg += svgEl('text', { x: padL - 5, y: y(t) + 3, 'text-anchor': 'end', class: 'axis-label' }, esc(mill(t)));
+    var ticks = bottom < 0 ? [top, 0, bottom] : [top, top / 2, 0];
+    ticks.forEach(function (t) {
+      var zero = t === 0 && bottom < 0;
+      svg += svgEl('line', { x1: padL, y1: y(t), x2: W - padR, y2: y(t), class: 'grid-line', stroke: zero ? '#C9D3E8' : '#E7ECF5' });
+      svg += svgEl('text', { x: padL - 5, y: y(t) + 3, 'text-anchor': 'end', class: 'axis-label' }, esc((t < 0 ? '−' : '') + mill(Math.abs(t))));
     });
-    var poly = data.map(function (d, i) { return x(i) + ',' + y(d.saldo); }).join(' ');
-    var area = 'M' + x(0) + ',' + y(0) + ' L' + data.map(function (d, i) { return x(i) + ',' + y(d.saldo); }).join(' L') + ' L' + x(data.length - 1) + ',' + y(0) + ' Z';
-    svg += svgEl('path', { d: area, fill: CHART_BLUE, 'fill-opacity': '0.10' });
-    svg += svgEl('polyline', { points: poly, fill: 'none', stroke: CHART_BLUE, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+    function drawLine(key, color) {
+      var poly = data.map(function (d, i) { return x(i) + ',' + y(d[key]); }).join(' ');
+      svg += svgEl('polyline', { points: poly, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+      data.forEach(function (d, i) {
+        var last = i === data.length - 1;
+        svg += svgEl('circle', { cx: x(i), cy: y(d[key]), r: last ? 4.5 : 3, fill: '#fff', stroke: color, 'stroke-width': last ? 2.4 : 2 });
+      });
+      // etiqueta directa del último mes
+      var ld = data[data.length - 1];
+      svg += svgEl('text', { x: x(data.length - 1), y: y(ld[key]) + (key === 'neto' && ld.neto < ld.facturado ? 15 : -9), 'text-anchor': 'end', class: 'x-label', fill: color, style: 'font-family:IBM Plex Mono,monospace;font-size:10px;font-weight:700;' }, esc((ld[key] < 0 ? '−' : '') + mill(Math.abs(ld[key]))));
+    }
+    drawLine('facturado', CHART_BLUE);
+    drawLine('neto', CHART_GREEN);
     data.forEach(function (d, i) {
-      var last = i === data.length - 1;
-      svg += svgEl('circle', { cx: x(i), cy: y(d.saldo), r: last ? 5 : 3.2, fill: '#fff', stroke: CHART_BLUE, 'stroke-width': last ? 2.4 : 2 });
       svg += svgEl('text', { x: x(i), y: H - 7, 'text-anchor': 'middle', class: 'x-label' }, esc(d.mes));
       svg += svgEl('rect', { x: x(i) - plotW / data.length / 2, y: padT, width: plotW / data.length, height: plotH, fill: 'transparent', class: 'bar-seg', 'data-chart-month': d.ym });
     });
-    return '<svg class="chart-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Por cobrar por mes">' + svg + '</svg>';
+    return '<div class="chart-legend">' +
+      '<span><i class="sw" style="background:' + CHART_BLUE + '"></i>Facturación</span>' +
+      '<span><i class="sw" style="background:' + CHART_GREEN + '"></i>Ganancia neta</span></div>' +
+      '<svg class="chart-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Facturación y ganancia neta por mes">' + svg + '</svg>';
   }
   // Torta: gastos del mes actual por categoría
   function donutChartHtml() {
@@ -3041,7 +3050,7 @@
     }
     return '<div class="stack-lg" style="margin-bottom:14px;">' +
       card('Entró vs. Salió', 'Últimos 6 meses', barsChartHtml(), 'Tocá un mes para ver su detalle') +
-      card('Por cobrar — tendencia', 'Deuda de clientes a fin de cada mes', lineChartHtml(), 'Tocá un mes para ver su detalle') +
+      card('Crecimiento del negocio', 'Facturación vs. ganancia neta, mes a mes', growthChartHtml(), 'Tocá un mes para ver en qué se fue la plata') +
       card('En qué se fue la plata', 'Gastos de ' + monthName(todayIso().slice(0, 7)) + ' por categoría', donutChartHtml(), 'Tocá para ver los gastos del mes') +
       card('Clientes con más deuda', 'Ordenados de mayor a menor saldo', rankingHtml(), 'Tocá un cliente para abrir su ficha') +
       '</div>';
