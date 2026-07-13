@@ -372,6 +372,29 @@ Fases del plan original (todas hechas):
   los dos celulares del dueño, revisan consola limpia y sin desborde
   horizontal, y validan la matemática financiera contra cálculos a mano.
 
+### Etapa D de la ampliación (2026-07-13) — Gráficos en Finanzas
+
+- **Resumen visual arriba de las tablas** en la pantalla Finanzas (`registro`),
+  sin datos nuevos: todo se calcula al vuelo con los mismos trabajos, ventas,
+  cobros y gastos. Cuatro gráficos, cada uno con "tocar → detalle real":
+  1. **Entró vs. Salió** (barras verde/rojo, 6 meses) — de `cashSeries(6)` sobre
+     `monthlyStats()` (cobrado y salió). Tocar un mes → `goRegMonth`.
+  2. **Por cobrar — tendencia** (línea, 8 meses) — `receivableSeries(8)`: suma
+     con signo de facturado a crédito (+) y pagos (−) acumulados hasta cada mes
+     (misma base que "Por cobrar"). Tocar un mes → `goRegMonth`.
+  3. **En qué se fue la plata** (torta) — `expenseByCat(ym)` del mes actual por
+     categoría. Tocar → `goRegMonth` del mes (panel de gastos).
+  4. **Clientes con más deuda** (ranking top 5) — `topDebtors(5)` sobre
+     `clientBalances()`, con chip vencido/al-día (peor atraso en días). Tocar →
+     `goClient` (ficha real; filas de clientes eliminados no son tocables).
+- **Dibujado a mano en SVG** (sin librerías, 100% offline), colores validados
+  para daltónicos. Empty states por gráfico si falta el dato correspondiente.
+  Funciones en `js/app.js`: `cashSeries`, `receivableSeries`, `expenseByCat`,
+  `topDebtors`, `barsChartHtml`, `lineChartHtml`, `donutChartHtml`,
+  `rankingHtml`, `financeChartsHtml`, `wireFinanceCharts` + helpers `ymAdd`,
+  `lastMonths`, `niceMax`, `mesCorto`. CSS: bloque "Gráficos de Finanzas".
+- Cache del service worker → `jgm-gestor-v8`.
+
 ## 5. Modelo de datos
 
 Clave de `localStorage`: **`jgm_gestor_v1`**. Estructura:

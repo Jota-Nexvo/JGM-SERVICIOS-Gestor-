@@ -2839,6 +2839,225 @@
     });
   }
 
+  // ===== Gráficos de Finanzas (Etapa D) =====
+  // Todo se calcula al vuelo con los mismos datos que ya usa la app; no guarda
+  // nada nuevo. Se dibuja a mano en SVG (liviano, sin librerías, 100% offline).
+  var CHART_CATS = ['#2a78d6', '#1baf7a', '#eda100', '#4a3aa7', '#eb6834', '#e87ba4', '#8a97b0'];
+  var CHART_GREEN = '#1F8A5B', CHART_RED = '#C2452D', CHART_BLUE = '#2B57C8';
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function ymAdd(ym, delta) {
+    var y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7)) - 1 + delta;
+    y += Math.floor(m / 12); m = ((m % 12) + 12) % 12;
+    return y + '-' + pad2(m + 1);
+  }
+  function mesCorto(ym) { return (MESES[Number(ym.slice(5, 7)) - 1] || '').slice(0, 3); }
+  function lastMonths(n) {
+    var end = todayIso().slice(0, 7), a = [];
+    for (var i = n - 1; i >= 0; i--) a.push(ymAdd(end, -i));
+    return a;
+  }
+  function niceMax(v) {
+    if (v <= 0) return 1;
+    var pow = Math.pow(10, Math.floor(Math.log10(v))), f = v / pow;
+    return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow;
+  }
+  // 1) Entró (cobrado) vs Salió (gastos + compras) por mes
+  function cashSeries(n) {
+    var by = {}; monthlyStats().forEach(function (r) { by[r.ym] = r; });
+    return lastMonths(n).map(function (ym) {
+      var r = by[ym] || {};
+      return { ym: ym, mes: mesCorto(ym), entro: r.cobrado || 0, salio: r.salio || 0 };
+    });
+  }
+  // 2) Por cobrar a fin de cada mes: total facturado a crédito acumulado menos
+  //    los pagos acumulados hasta ese mes (misma base que "Por cobrar" de hoy)
+  function receivableSeries(n) {
+    var ev = [];
+    (state.data.jobs || []).forEach(function (j) {
+      if (!j.credit) return;
+      if (j.date) ev.push({ d: j.date.slice(0, 7), v: Number(j.price) || 0 });
+      (j.payments || []).forEach(function (p) { if (p.date) ev.push({ d: p.date.slice(0, 7), v: -(Number(p.amount) || 0) }); });
+    });
+    (state.data.sales || []).forEach(function (s) {
+      if (!s.credit) return;
+      if (s.date) ev.push({ d: s.date.slice(0, 7), v: saleTotal(s) });
+      (s.payments || []).forEach(function (p) { if (p.date) ev.push({ d: p.date.slice(0, 7), v: -(Number(p.amount) || 0) }); });
+    });
+    return lastMonths(n).map(function (ym) {
+      var saldo = 0;
+      ev.forEach(function (e) { if (e.d <= ym) saldo += e.v; });
+      return { ym: ym, mes: mesCorto(ym), saldo: Math.max(0, saldo) };
+    });
+  }
+  // 3) Gastos de un mes agrupados por categoría (mayor a menor)
+  function expenseByCat(ym) {
+    var by = {};
+    (state.data.expenses || []).forEach(function (e) {
+      if ((e.date || '').slice(0, 7) !== ym) return;
+      var c = e.category || 'Otro';
+      by[c] = (by[c] || 0) + (Number(e.amount) || 0);
+    });
+    return Object.keys(by).map(function (c) { return { cat: c, amount: by[c] }; })
+      .sort(function (a, b) { return b.amount - a.amount; });
+  }
+  // 4) Clientes con más deuda (con peor atraso en días, si lo hay)
+  function topDebtors(n) {
+    var bal = clientBalances(), today = todayIso(), overdue = {};
+    var scan = function (list, balFn) {
+      (list || []).forEach(function (x) {
+        if (!x.credit || balFn(x) <= 0) return;
+        (x.dueDates || []).forEach(function (dd) {
+          if (dd.done) return;
+          var diff = daysBetween(today, dd.date);
+          if (diff < 0 && -diff > (overdue[x.clientId] || 0)) overdue[x.clientId] = -diff;
+        });
+      });
+    };
+    scan(state.data.jobs, jobBalance);
+    scan(state.data.sales, saleBalance);
+    var byId = {}; (state.data.clients || []).forEach(function (c) { byId[c.id] = c; });
+    return Object.keys(bal).map(function (id) {
+      return { id: id, name: (byId[id] || {}).name || 'Cliente eliminado', exists: !!byId[id], saldo: bal[id], venc: overdue[id] || 0 };
+    }).filter(function (r) { return r.saldo > 0; })
+      .sort(function (a, b) { return b.saldo - a.saldo; }).slice(0, n);
+  }
+
+  // ---- Dibujo (devuelven strings de SVG/HTML) ----
+  function svgEl(tag, attrs, inner) {
+    var s = '<' + tag;
+    for (var k in attrs) s += ' ' + k + '="' + attrs[k] + '"';
+    return s + '>' + (inner || '') + '</' + tag + '>';
+  }
+  // Barras agrupadas Entró vs Salió
+  function barsChartHtml() {
+    var data = cashSeries(6);
+    var maxV = niceMax(Math.max.apply(null, data.map(function (d) { return Math.max(d.entro, d.salio); }).concat([1])));
+    if (maxV <= 1 && !data.some(function (d) { return d.entro || d.salio; })) {
+      return '<div class="chart-empty">Todavía no hay cobros ni gastos para mostrar.</div>';
+    }
+    var W = 340, H = 176, padL = 34, padR = 6, padT = 12, padB = 24;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    function y(v) { return padT + plotH - (v / maxV) * plotH; }
+    var svg = '';
+    [0, maxV / 2, maxV].forEach(function (t) {
+      svg += svgEl('line', { x1: padL, y1: y(t), x2: W - padR, y2: y(t), class: 'grid-line' });
+      svg += svgEl('text', { x: padL - 5, y: y(t) + 3, 'text-anchor': 'end', class: 'axis-label' }, esc(mill(t)));
+    });
+    var gW = plotW / data.length, bw = 15, gap = 4;
+    data.forEach(function (d, i) {
+      var cx = padL + gW * i + gW / 2;
+      var hE = (d.entro / maxV) * plotH, hS = (d.salio / maxV) * plotH;
+      svg += svgEl('rect', { x: cx - bw - gap / 2, y: y(d.entro), width: bw, height: hE, rx: 4, fill: CHART_GREEN });
+      svg += svgEl('rect', { x: cx + gap / 2, y: y(d.salio), width: bw, height: hS, rx: 4, fill: CHART_RED });
+      svg += svgEl('text', { x: cx, y: H - 8, 'text-anchor': 'middle', class: 'x-label' }, esc(d.mes));
+      // zona táctil de todo el grupo
+      svg += svgEl('rect', { x: padL + gW * i, y: padT, width: gW, height: plotH, fill: 'transparent', class: 'bar-seg', 'data-chart-month': d.ym });
+    });
+    return '<div class="chart-legend">' +
+      '<span><i class="sw" style="background:' + CHART_GREEN + '"></i>Entró (cobrado)</span>' +
+      '<span><i class="sw" style="background:' + CHART_RED + '"></i>Salió (gastos + compras)</span></div>' +
+      '<svg class="chart-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Entradas y salidas por mes">' + svg + '</svg>';
+  }
+  // Línea: por cobrar a fin de mes
+  function lineChartHtml() {
+    var data = receivableSeries(8);
+    var maxV = niceMax(Math.max.apply(null, data.map(function (d) { return d.saldo; }).concat([1])));
+    if (!data.some(function (d) { return d.saldo; })) {
+      return '<div class="chart-empty">Todavía no hay deudas a crédito para mostrar.</div>';
+    }
+    var W = 340, H = 168, padL = 34, padR = 10, padT = 16, padB = 22;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    function x(i) { return padL + (plotW / (data.length - 1)) * i; }
+    function y(v) { return padT + plotH - (v / maxV) * plotH; }
+    var svg = '';
+    [0, maxV / 2, maxV].forEach(function (t) {
+      svg += svgEl('line', { x1: padL, y1: y(t), x2: W - padR, y2: y(t), class: 'grid-line' });
+      svg += svgEl('text', { x: padL - 5, y: y(t) + 3, 'text-anchor': 'end', class: 'axis-label' }, esc(mill(t)));
+    });
+    var poly = data.map(function (d, i) { return x(i) + ',' + y(d.saldo); }).join(' ');
+    var area = 'M' + x(0) + ',' + y(0) + ' L' + data.map(function (d, i) { return x(i) + ',' + y(d.saldo); }).join(' L') + ' L' + x(data.length - 1) + ',' + y(0) + ' Z';
+    svg += svgEl('path', { d: area, fill: CHART_BLUE, 'fill-opacity': '0.10' });
+    svg += svgEl('polyline', { points: poly, fill: 'none', stroke: CHART_BLUE, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+    data.forEach(function (d, i) {
+      var last = i === data.length - 1;
+      svg += svgEl('circle', { cx: x(i), cy: y(d.saldo), r: last ? 5 : 3.2, fill: '#fff', stroke: CHART_BLUE, 'stroke-width': last ? 2.4 : 2 });
+      svg += svgEl('text', { x: x(i), y: H - 7, 'text-anchor': 'middle', class: 'x-label' }, esc(d.mes));
+      svg += svgEl('rect', { x: x(i) - plotW / data.length / 2, y: padT, width: plotW / data.length, height: plotH, fill: 'transparent', class: 'bar-seg', 'data-chart-month': d.ym });
+    });
+    return '<svg class="chart-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Por cobrar por mes">' + svg + '</svg>';
+  }
+  // Torta: gastos del mes actual por categoría
+  function donutChartHtml() {
+    var ym = todayIso().slice(0, 7);
+    var data = expenseByCat(ym);
+    if (!data.length) {
+      return '<div class="chart-empty">Este mes todavía no cargaste gastos.</div>';
+    }
+    var total = data.reduce(function (a, d) { return a + d.amount; }, 0);
+    var cx = 60, cy = 60, rO = 54, rI = 33, a0 = -Math.PI / 2, svg = '';
+    function pt(r, a) { return [(cx + r * Math.cos(a)).toFixed(2), (cy + r * Math.sin(a)).toFixed(2)]; }
+    data.forEach(function (d, i) {
+      var frac = d.amount / total, a1 = a0 + frac * Math.PI * 2, large = frac > 0.5 ? 1 : 0, pgap = data.length > 1 ? 0.02 : 0;
+      var p0 = pt(rO, a0 + pgap), p1 = pt(rO, a1 - pgap), p2 = pt(rI, a1 - pgap), p3 = pt(rI, a0 + pgap);
+      var dd = 'M' + p0[0] + ',' + p0[1] + ' A' + rO + ',' + rO + ' 0 ' + large + ' 1 ' + p1[0] + ',' + p1[1] +
+        ' L' + p2[0] + ',' + p2[1] + ' A' + rI + ',' + rI + ' 0 ' + large + ' 0 ' + p3[0] + ',' + p3[1] + ' Z';
+      svg += svgEl('path', { d: dd, fill: CHART_CATS[i % CHART_CATS.length] });
+      a0 = a1;
+    });
+    svg += svgEl('text', { x: cx, y: cy - 1, 'text-anchor': 'middle', class: 'donut-center-v' }, esc(mill(total)));
+    svg += svgEl('text', { x: cx, y: cy + 11, 'text-anchor': 'middle', class: 'donut-center-l' }, 'TOTAL');
+    var legend = data.map(function (d, i) {
+      return '<div class="dl-row" data-chart-gastos="' + esc(ym) + '"><i class="sw" style="background:' + CHART_CATS[i % CHART_CATS.length] + '"></i>' +
+        '<span class="dl-name">' + esc(d.cat) + '</span><span class="dl-val">' + esc(fmtG(d.amount)) + '</span></div>';
+    }).join('');
+    return '<div class="donut-wrap"><svg class="donut-svg" width="120" height="120" viewBox="0 0 120 120" role="img" aria-label="Gastos por categoría">' + svg + '</svg>' +
+      '<div class="donut-legend">' + legend + '</div></div>';
+  }
+  // Ranking: clientes con más deuda
+  function rankingHtml() {
+    var data = topDebtors(5);
+    if (!data.length) {
+      return '<div class="chart-empty">¡No hay clientes con deuda! 🎉</div>';
+    }
+    var maxS = data[0].saldo;
+    return '<div class="rank-list">' + data.map(function (d, i) {
+      var pct = Math.round((d.saldo / maxS) * 100);
+      var venc = d.venc > 0;
+      var chip = '<span class="rank-chip ' + (venc ? 'venc' : 'aldia') + '"><span class="dot"></span>' +
+        (venc ? 'Vencido hace ' + d.venc + (d.venc === 1 ? ' día' : ' días') : 'Dentro de fecha') + '</span>';
+      return '<button type="button" class="rank-row"' + (d.exists ? ' data-chart-client="' + esc(d.id) + '"' : '') + '>' +
+        '<span class="rank-num">' + (i + 1) + '</span><div class="rank-body">' +
+        '<div class="rank-top"><span class="rank-name">' + esc(d.name) + '</span><span class="rank-amt">' + esc(fmtG(d.saldo)) + '</span></div>' +
+        '<div class="rank-track"><div class="rank-fill" style="width:' + pct + '%;background:' + (venc ? CHART_RED : CHART_BLUE) + '"></div></div>' +
+        chip + '</div></button>';
+    }).join('') + '</div>';
+  }
+  var TAP_HINT = '<div class="chart-tap-hint"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>{t}</div>';
+  function financeChartsHtml() {
+    function card(title, sub, body, hint) {
+      return '<div class="chart-card"><div class="chart-head"><div class="chart-title">' + esc(title) + '</div>' +
+        '<div class="chart-sub">' + esc(sub) + '</div></div>' + body +
+        (hint ? TAP_HINT.replace('{t}', esc(hint)) : '') + '</div>';
+    }
+    return '<div class="stack-lg" style="margin-bottom:14px;">' +
+      card('Entró vs. Salió', 'Últimos 6 meses', barsChartHtml(), 'Tocá un mes para ver su detalle') +
+      card('Por cobrar — tendencia', 'Deuda de clientes a fin de cada mes', lineChartHtml(), 'Tocá un mes para ver su detalle') +
+      card('En qué se fue la plata', 'Gastos de ' + monthName(todayIso().slice(0, 7)) + ' por categoría', donutChartHtml(), 'Tocá para ver los gastos del mes') +
+      card('Clientes con más deuda', 'Ordenados de mayor a menor saldo', rankingHtml(), 'Tocá un cliente para abrir su ficha') +
+      '</div>';
+  }
+  function wireFinanceCharts(box) {
+    box.querySelectorAll('[data-chart-month]').forEach(function (el) {
+      el.addEventListener('click', function () { goRegMonth(el.getAttribute('data-chart-month')); });
+    });
+    box.querySelectorAll('[data-chart-gastos]').forEach(function (el) {
+      el.addEventListener('click', function () { goRegMonth(el.getAttribute('data-chart-gastos')); });
+    });
+    box.querySelectorAll('[data-chart-client]').forEach(function (el) {
+      el.addEventListener('click', function () { goClient(el.getAttribute('data-chart-client')); });
+    });
+  }
+
   function renderRegistro() {
     var box = document.getElementById('registro-content');
     var rows = monthlyStats();
@@ -2851,6 +3070,9 @@
       '<span class="reg-open-main"><span class="reg-open-title">Gastos del negocio</span>' +
       '<span class="reg-open-sub">Registrar combustible, viáticos, personal…</span></span>' +
       '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>';
+
+    // Gráficos (resumen visual) — arriba de las tablas mensuales
+    if (rows.length) html += financeChartsHtml();
 
     if (!rows.length) {
       html += '<div class="panel"><div class="panel-empty">Todavía no hay movimientos. Cuando registres trabajos o gastos, vas a ver acá el resumen mes por mes.</div></div>';
@@ -2930,6 +3152,7 @@
     box.querySelectorAll('[data-reg-month]').forEach(function (el) {
       el.addEventListener('click', function () { goRegMonth(el.getAttribute('data-reg-month')); });
     });
+    wireFinanceCharts(box);
   }
 
   // ===== Detalle de un mes: facturación y cobros con cliente y fecha =====
